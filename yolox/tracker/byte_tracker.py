@@ -41,12 +41,14 @@ class STrack(BaseTrack):
             for i, (mean, cov) in enumerate(zip(multi_mean, multi_covariance)):
                 stracks[i].mean = mean
                 stracks[i].covariance = cov
+            print(f"multi_mean: {multi_mean}")
 
     def activate(self, kalman_filter, frame_id):
         """Start a new tracklet"""
         self.kalman_filter = kalman_filter
         self.track_id = self.next_id()
         self.mean, self.covariance = self.kalman_filter.initiate(self.tlwh_to_xyah(self._tlwh))
+        print(f"mean after kalman init: {self.mean}")
 
         self.tracklet_len = 0
         self.state = TrackState.Tracked
@@ -158,29 +160,34 @@ class BYTETracker(object):
 
     def update(self, output_results, img_info, img_size):
         self.frame_id += 1
-        activated_starcks = []
+        activated_stracks = []
         refind_stracks = []
         lost_stracks = []
         removed_stracks = []
 
-        if output_results.shape[1] == 5:
+        if output_results.shape[1] == 6:
             scores = output_results[:, 4]
             bboxes = output_results[:, :4]
-            cls_name = output_results[:,6]
+            cls_name = output_results[:,5]
         else:
             output_results = output_results.cpu().numpy()
             scores = output_results[:, 4] * output_results[:, 5]
             cls_name = output_results[:,6]
             bboxes = output_results[:, :4]  # x1y1x2y2
+
         img_h, img_w = img_info[0], img_info[1]
         scale = min(img_size[0] / float(img_h), img_size[1] / float(img_w))
         bboxes /= scale
-
+        ## detection with high scores
+        print(f"scores: {scores}")
         remain_inds = scores > self.args.track_thresh
         inds_low = scores > 0.1
         inds_high = scores < self.args.track_thresh
-
-
+        print(f"remain {remain_inds}")
+        print(f"low {inds_low}")
+        print(f"inds_high {inds_high}")
+        
+        #detection with low scores
         inds_second = np.logical_and(inds_low, inds_high)
         dets_second = bboxes[inds_second]
         dets = bboxes[remain_inds]
@@ -189,39 +196,57 @@ class BYTETracker(object):
         scores_second = scores[inds_second]
         class_second = cls_name[inds_second]
 
+
+        #create track for all detections:
+        # objects_all = [STrack(STrack.tlbr_to_tlwh(tlbr), s, c) for (tlbr, s, c) in zip(bboxes, scores, cls_name)]
+        # STrack.multi_predict(objects_all)
+
         if len(dets) > 0:
-            '''Detections'''
+            '''Detections: bounding boxes of objects that has a score > track thresh'''
             detections = [STrack(STrack.tlbr_to_tlwh(tlbr), s, c) for
                           (tlbr, s, c) in zip(dets, scores_keep, class_keep)]
         else:
             detections = []
-        print(detections)
+        print(f"high score detections: {detections}")
 
         ''' Add newly detected tracklets to tracked_stracks'''
         unconfirmed = []
         tracked_stracks = []  # type: list[STrack]
+        print(f"self.tracked: {self.tracked_stracks}")
         for track in self.tracked_stracks:
             if not track.is_activated:
                 unconfirmed.append(track)
             else:
                 tracked_stracks.append(track)
+        ## following coded added by xiang li        
+        # for each in detections:
+        #     if each not in tracked_stracks:
+        #         #print(f"each: {each}")
+        #         each.activate(self.kalman_filter, self.frame_id)
+        #         tracked_stracks.append(each)
         print(tracked_stracks)
 
         ''' Step 2: First association, with high score detection boxes'''
         strack_pool = joint_stracks(tracked_stracks, self.lost_stracks)
+        print(f"s_pool: {strack_pool}")
         # Predict the current location with KF
         STrack.multi_predict(strack_pool)
         dists = matching.iou_distance(strack_pool, detections)
+        print(f"dists: {dists}")
         # if not self.args.mot20:
         #     dists = matching.fuse_score(dists, detections)
         matches, u_track, u_detection = matching.linear_assignment(dists, thresh=self.args.match_thresh)
+        print(f"1st match {matches}")
+        print(f"1st utrack {u_track}")
+        print(f"1st u_detections {u_detection}")
 
+        # associate the tracks in the high score detection with the existing tracks
         for itracked, idet in matches:
             track = strack_pool[itracked]
             det = detections[idet]
             if track.state == TrackState.Tracked:
                 track.update(detections[idet], self.frame_id)
-                activated_starcks.append(track)
+                activated_stracks.append(track)
             else:
                 track.re_activate(det, self.frame_id, new_id=False)
                 refind_stracks.append(track)
@@ -234,19 +259,26 @@ class BYTETracker(object):
                           (tlbr, s, c) in zip(dets_second, scores_second, class_second)]
         else:
             detections_second = []
+        print(f"2nd detection: {detections_second}")
+        # for unmatched tracks from the first association, if the state is Tracked, then put it in r_tracked_stracks
         r_tracked_stracks = [strack_pool[i] for i in u_track if strack_pool[i].state == TrackState.Tracked]
+        print(f"r_track: {r_tracked_stracks}")
         dists = matching.iou_distance(r_tracked_stracks, detections_second)
         matches, u_track, u_detection_second = matching.linear_assignment(dists, thresh=0.5)
+        print(f"2nd match {matches}")
+        print(f"2nd utrack {u_track}")
+        print(f"2nd u_detections {u_detection_second}")
+        # assocated the lower score detection with the rest of tracks
         for itracked, idet in matches:
             track = r_tracked_stracks[itracked]
             det = detections_second[idet]
             if track.state == TrackState.Tracked:
                 track.update(det, self.frame_id)
-                activated_starcks.append(track)
+                activated_stracks.append(track)
             else:
                 track.re_activate(det, self.frame_id, new_id=False)
                 refind_stracks.append(track)
-
+        # mark the rest of tracks as lost tracks
         for it in u_track:
             track = r_tracked_stracks[it]
             if not track.state == TrackState.Lost:
@@ -254,6 +286,7 @@ class BYTETracker(object):
                 lost_stracks.append(track)
 
         '''Deal with unconfirmed tracks, usually tracks with only one beginning frame'''
+        # the following seems only dealing the unconfirmed with the high score unmatched
         detections = [detections[i] for i in u_detection]
         dists = matching.iou_distance(unconfirmed, detections)
         # if not self.args.mot20:
@@ -261,7 +294,8 @@ class BYTETracker(object):
         matches, u_unconfirmed, u_detection = matching.linear_assignment(dists, thresh=0.7)
         for itracked, idet in matches:
             unconfirmed[itracked].update(detections[idet], self.frame_id)
-            activated_starcks.append(unconfirmed[itracked])
+            activated_stracks.append(unconfirmed[itracked])
+        # for remaining unmatched tracks, remove them from the tracks    
         for it in u_unconfirmed:
             track = unconfirmed[it]
             track.mark_removed()
@@ -269,11 +303,14 @@ class BYTETracker(object):
 
         """ Step 4: Init new stracks"""
         for inew in u_detection:
+            print("creating new trackssssssssssssssssss!")
             track = detections[inew]
+            print(track.score)
             if track.score < self.det_thresh:
                 continue
             track.activate(self.kalman_filter, self.frame_id)
-            activated_starcks.append(track)
+            activated_stracks.append(track)
+            print(f"activated_stracks: {activated_stracks}")
         """ Step 5: Update state"""
         for track in self.lost_stracks:
             if self.frame_id - track.end_frame > self.max_time_lost:
@@ -283,7 +320,7 @@ class BYTETracker(object):
         # print('Ramained match {} s'.format(t4-t3))
 
         self.tracked_stracks = [t for t in self.tracked_stracks if t.state == TrackState.Tracked]
-        self.tracked_stracks = joint_stracks(self.tracked_stracks, activated_starcks)
+        self.tracked_stracks = joint_stracks(self.tracked_stracks, activated_stracks)
         self.tracked_stracks = joint_stracks(self.tracked_stracks, refind_stracks)
         self.lost_stracks = sub_stracks(self.lost_stracks, self.tracked_stracks)
         self.lost_stracks.extend(lost_stracks)
@@ -293,6 +330,183 @@ class BYTETracker(object):
         # get scores of lost tracks
         output_stracks = [track for track in self.tracked_stracks if track.is_activated]
         #print(output_stracks)
+        print("========================================================")
+
+        return output_stracks
+
+    def new_update(self, output_results, img_info, img_size):
+        self.frame_id += 1
+        activated_stracks = []
+        refind_stracks = []
+        lost_stracks = []
+        removed_stracks = []
+
+        if output_results.shape[1] == 6:
+            scores = output_results[:, 4]
+            bboxes = output_results[:, :4]
+            cls_name = output_results[:,5]
+        else:
+            output_results = output_results.cpu().numpy()
+            scores = output_results[:, 4] * output_results[:, 5]
+            cls_name = output_results[:,6]
+            bboxes = output_results[:, :4]  # x1y1x2y2
+
+        img_h, img_w = img_info[0], img_info[1]
+        scale = min(img_size[0] / float(img_h), img_size[1] / float(img_w))
+        bboxes /= scale
+        ## detection with high scores
+        print(f"scores: {scores}")
+        remain_inds = scores > self.args.track_thresh
+        inds_low = scores > 0.1
+        inds_high = scores < self.args.track_thresh
+        print(f"remain {remain_inds}")
+        print(f"low {inds_low}")
+        print(f"inds_high {inds_high}")
+        
+        #detection with low scores
+        inds_second = np.logical_and(inds_low, inds_high)
+        dets_second = bboxes[inds_second]
+        dets = bboxes[remain_inds]
+        scores_keep = scores[remain_inds]
+        class_keep = cls_name[remain_inds]
+        scores_second = scores[inds_second]
+        class_second = cls_name[inds_second]
+
+
+        #create track for all detections:
+        # objects_all = [STrack(STrack.tlbr_to_tlwh(tlbr), s, c) for (tlbr, s, c) in zip(bboxes, scores, cls_name)]
+        # STrack.multi_predict(objects_all)
+
+        if len(dets) > 0:
+            '''Detections: bounding boxes of objects that has a score > track thresh'''
+            detections = [STrack(STrack.tlbr_to_tlwh(tlbr), s, c) for
+                          (tlbr, s, c) in zip(dets, scores_keep, class_keep)]
+        else:
+            detections = []
+        print(f"high score detections: {detections}")
+
+        ''' Add newly detected tracklets to tracked_stracks'''
+        unconfirmed = []
+        tracked_stracks = []  # type: list[STrack]
+        print(f"self.tracked: {self.tracked_stracks}")
+        for track in self.tracked_stracks:
+            if not track.is_activated:
+                unconfirmed.append(track)
+            else:
+                tracked_stracks.append(track)
+        ## following coded added by xiang li        
+        # for each in detections:
+        #     if each not in tracked_stracks:
+        #         #print(f"each: {each}")
+        #         each.activate(self.kalman_filter, self.frame_id)
+        #         tracked_stracks.append(each)
+        print(tracked_stracks)
+
+        ''' Step 2: First association, with high score detection boxes'''
+        strack_pool = joint_stracks(tracked_stracks, self.lost_stracks)
+        print(f"s_pool: {strack_pool}")
+        # Predict the current location with KF
+        STrack.multi_predict(strack_pool)
+        dists = matching.iou_distance(strack_pool, detections)
+        print(f"dists: {dists}")
+        # if not self.args.mot20:
+        #     dists = matching.fuse_score(dists, detections)
+        matches, u_track, u_detection = matching.linear_assignment(dists, thresh=self.args.match_thresh)
+        print(f"1st match {matches}")
+        print(f"1st utrack {u_track}")
+        print(f"1st u_detections {u_detection}")
+
+        # associate the tracks in the high score detection with the existing tracks
+        for itracked, idet in matches:
+            track = strack_pool[itracked]
+            det = detections[idet]
+            if track.state == TrackState.Tracked:
+                track.update(detections[idet], self.frame_id)
+                activated_stracks.append(track)
+            else:
+                track.re_activate(det, self.frame_id, new_id=False)
+                refind_stracks.append(track)
+
+        ''' Step 3: Second association, with low score detection boxes'''
+        # association the untrack to the low score detections
+        if len(dets_second) > 0:
+            '''Detections'''
+            detections_second = [STrack(STrack.tlbr_to_tlwh(tlbr), s, c) for
+                          (tlbr, s, c) in zip(dets_second, scores_second, class_second)]
+        else:
+            detections_second = []
+        print(f"2nd detection: {detections_second}")
+        # for unmatched tracks from the first association, if the state is Tracked, then put it in r_tracked_stracks
+        r_tracked_stracks = [strack_pool[i] for i in u_track if strack_pool[i].state == TrackState.Tracked]
+        print(f"r_track: {r_tracked_stracks}")
+        dists = matching.iou_distance(r_tracked_stracks, detections_second)
+        matches, u_track, u_detection_second = matching.linear_assignment(dists, thresh=0.5)
+        print(f"2nd match {matches}")
+        print(f"2nd utrack {u_track}")
+        print(f"2nd u_detections {u_detection_second}")
+        # assocated the lower score detection with the rest of tracks
+        for itracked, idet in matches:
+            track = r_tracked_stracks[itracked]
+            det = detections_second[idet]
+            if track.state == TrackState.Tracked:
+                track.update(det, self.frame_id)
+                activated_stracks.append(track)
+            else:
+                track.re_activate(det, self.frame_id, new_id=False)
+                refind_stracks.append(track)
+        # mark the rest of tracks as lost tracks
+        for it in u_track:
+            track = r_tracked_stracks[it]
+            if not track.state == TrackState.Lost:
+                track.mark_lost()
+                lost_stracks.append(track)
+
+        '''Deal with unconfirmed tracks, usually tracks with only one beginning frame'''
+        # the following seems only dealing the unconfirmed with the high score unmatched
+        detections = [detections[i] for i in u_detection]
+        dists = matching.iou_distance(unconfirmed, detections)
+        # if not self.args.mot20:
+        #     dists = matching.fuse_score(dists, detections)
+        matches, u_unconfirmed, u_detection = matching.linear_assignment(dists, thresh=0.7)
+        for itracked, idet in matches:
+            unconfirmed[itracked].update(detections[idet], self.frame_id)
+            activated_stracks.append(unconfirmed[itracked])
+        # for remaining unmatched tracks, remove them from the tracks    
+        for it in u_unconfirmed:
+            track = unconfirmed[it]
+            track.mark_removed()
+            removed_stracks.append(track)
+
+        """ Step 4: Init new stracks"""
+        for inew in u_detection:
+            print("creating new trackssssssssssssssssss!")
+            track = detections[inew]
+            print(track.score)
+            if track.score < self.det_thresh:
+                continue
+            track.activate(self.kalman_filter, self.frame_id)
+            activated_stracks.append(track)
+            print(f"activated_stracks: {activated_stracks}")
+        """ Step 5: Update state"""
+        for track in self.lost_stracks:
+            if self.frame_id - track.end_frame > self.max_time_lost:
+                track.mark_removed()
+                removed_stracks.append(track)
+
+        # print('Ramained match {} s'.format(t4-t3))
+
+        self.tracked_stracks = [t for t in self.tracked_stracks if t.state == TrackState.Tracked]
+        self.tracked_stracks = joint_stracks(self.tracked_stracks, activated_stracks)
+        self.tracked_stracks = joint_stracks(self.tracked_stracks, refind_stracks)
+        self.lost_stracks = sub_stracks(self.lost_stracks, self.tracked_stracks)
+        self.lost_stracks.extend(lost_stracks)
+        self.lost_stracks = sub_stracks(self.lost_stracks, self.removed_stracks)
+        self.removed_stracks.extend(removed_stracks)
+        self.tracked_stracks, self.lost_stracks = remove_duplicate_stracks(self.tracked_stracks, self.lost_stracks)
+        # get scores of lost tracks
+        output_stracks = [track for track in self.tracked_stracks if track.is_activated]
+        #print(output_stracks)
+        print("========================================================")
 
         return output_stracks
 

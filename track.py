@@ -11,6 +11,7 @@ sys.path.insert(0, '/data/xiang/video_collab/para_det_trk')
 import cv2
 import torch
 import math
+import numpy as np
 
 from yolox.data.data_augment import ValTransform
 from yolox.data.datasets import COCO_CLASSES
@@ -81,39 +82,104 @@ def frame_sampler(source, path, predictor, vis_folder, args):
     frame_id = 0
     results = []
     video_start = time.time()
+    img_info ={}
     while True:
         ret_val, frame = cap.read()
         if ret_val:
-            outputs, img_info = predictor.inference(frame)
-            print(outputs)
+            #if frame_id == 15:
+            #    import sys
+            #    sys.exit()
+            height, width = frame.shape[:2]
+            img_info["height"] = height
+            img_info["width"] = width
+            img_info["raw_img"] = frame
+            if frame_id % 10 == 0:
+                outputs, img_info = predictor.inference(frame)
+                print(f"detection result: {outputs}")
+                # the mean in the kalman filter object has all 8 states, potentially expose that to the following interface and do prediction.
+                if outputs[0] is not None:
+                    online_targets = tracker.update(outputs[0], [img_info['height'], img_info['width']], exp.test_size)
+                    print(f"online_targets: {online_targets}")
+                    # if frame_id == 50:
+                    #     import sys
+                    #     sys.exit()
+                    online_tlwhs = []
+                    online_ids = []
+                    online_scores = []
+                    online_class_id = []
+                    predicted_bbox = []
+                    for t in online_targets:
+                        tlwh = t.tlwh
+                        print(f"tlwh: {tlwh}")
+                        tid = t.track_id
+                        tlbr = np.asarray(tlwh).copy()
+                        tlbr[2:] += tlbr[:2]
+                        tlbr=np.append(tlbr,[t.score, t.class_id])
+                        predicted_bbox.append(tlbr)
+                        #vertical = tlwh[2] / tlwh[3] > args.aspect_ratio_thresh
+                        if tlwh[2] * tlwh[3] > args.min_box_area: #and not vertical:
+                            online_tlwhs.append(tlwh)
+                            online_ids.append(tid)
+                            online_scores.append(t.score)
+                            online_class_id.append(t.class_id)
+                            results.append(
+                                f"{frame_id},{tid},{tlwh[0]:.2f},{tlwh[1]:.2f},{tlwh[2]:.2f},{tlwh[3]:.2f},{t.score:.2f},-1,-1,-1\n"
+                            )
+                    print("=======plot track=================")
+                    online_im = plot_tracking(
+                        image=img_info['raw_img'], tlwhs=online_tlwhs, obj_ids=online_ids, online_class_id=online_class_id, frame_id=frame_id + 1, fps=fps, scores=online_scores, class_names = cls_names
+                    )
+                    predicted_bbox = torch.tensor(np.array(predicted_bbox), dtype=torch.float32)
+                #    print(f"tensor_2: {predicted_bbox}")
 
-            if outputs[0] is not None:
-                online_targets = tracker.update(outputs[0], [img_info['height'], img_info['width']], exp.test_size)
-                print(f"online: {online_targets}")
-                # if frame_id == 50:
-                #     import sys
-                #     sys.exit()
-                online_tlwhs = []
-                online_ids = []
-                online_scores = []
-                online_class_id = []
-                for t in online_targets:
-                    tlwh = t.tlwh
-                    tid = t.track_id
-                    vertical = tlwh[2] / tlwh[3] > args.aspect_ratio_thresh
-                    if tlwh[2] * tlwh[3] > args.min_box_area and not vertical:
-                        online_tlwhs.append(tlwh)
-                        online_ids.append(tid)
-                        online_scores.append(t.score)
-                        online_class_id.append(t.class_id)
-                        results.append(
-                            f"{frame_id},{tid},{tlwh[0]:.2f},{tlwh[1]:.2f},{tlwh[2]:.2f},{tlwh[3]:.2f},{t.score:.2f},-1,-1,-1\n"
-                        )
-                online_im = plot_tracking(
-                    image=img_info['raw_img'], tlwhs=online_tlwhs, obj_ids=online_ids, online_class_id=online_class_id, frame_id=frame_id + 1, fps=fps, scores=online_scores, class_names = cls_names
-                )
+                else:
+                    online_im = img_info['raw_img']
+
             else:
-                online_im = img_info['raw_img']
+                print(predicted_bbox)
+                if predicted_bbox.nelement() != 0:
+                    # run kalman filter on the online targets, the following code need to be modified
+                    print(f"bb: {predicted_bbox.shape}")
+                    print(f"online target: {online_targets}")
+                    online_tlwhs = []
+                    online_ids = []
+                    online_scores = []
+                    online_class_id = []
+                    for each_track in online_targets:
+                        print(f"track id: {each_track.track_id} class: {each_track.class_id} ???????")
+                        print(f"mean: {each_track.mean}")
+
+                        # dividing the last 4 state by the number of frame intervals in the kalman filter
+                        new_x = each_track.mean[0]+each_track.mean[4]/10
+                        new_y = each_track.mean[1]+each_track.mean[5]/10
+                        new_a = each_track.mean[2]+each_track.mean[6]/10
+                        new_h = each_track.mean[3]+each_track.mean[7]/10
+                        new_w = new_a * new_h
+                        tlwh = [math.ceil(new_x - new_w/2),math.ceil(new_y - new_h/2), int(new_w), int(new_h)]
+
+                        # converting the predicted tlwh to tlbr and use this as the new detection bbox
+                        tlbr = np.asarray(tlwh).copy()
+                        tlbr[2:] += tlbr[:2]
+                        tlbr=np.append(tlbr,[t.score, t.class_id])
+                        predicted_bbox.append(tlbr)
+                        
+                        print(f"tlwh after first kalman: {tlwh}")
+                        each_track.mean[0] = new_x
+                        each_track.mean[1] = new_y
+                        each_track.mean[2] = new_a
+                        each_track.mean[3] = new_h
+                        if tlwh[2] * tlwh[3] > args.min_box_area:
+                            online_tlwhs.append(tlwh)
+                            online_ids.append(each_track.track_id)
+                            online_scores.append(each_track.score)
+                            online_class_id.append(each_track.class_id)
+                    online_im = plot_tracking(
+                        image=img_info['raw_img'], tlwhs=online_tlwhs, obj_ids=online_ids, online_class_id=online_class_id, frame_id=frame_id + 1, fps=fps, scores=online_scores, class_names = cls_names
+                    )
+
+                else:
+                    online_im = img_info['raw_img']
+
 
 
             # if (frame_idx % num_track) == 0:
@@ -129,6 +195,7 @@ def frame_sampler(source, path, predictor, vis_folder, args):
 
             if args.save_result:
                 vid_writer.write(online_im)
+                cv2.imwrite(f'/data/xiang/video_collab/para_det_trk/imgs/{frame_id}.png', online_im)
             else:
                 cv2.namedWindow("yolox", cv2.WINDOW_NORMAL)
                 cv2.imshow("yolox", result_frame)
@@ -163,7 +230,7 @@ if __name__ == '__main__':
     parser.add_argument("--track_buffer", type=int, default=30, help="the frames for keep lost tracks")
     parser.add_argument("--match_thresh", type=float, default=0.8, help="matching threshold for tracking")
     parser.add_argument("--aspect_ratio_thresh", type=float, default=1.6, help="threshold for filtering out boxes of which aspect ratio are above the given value.")
-    parser.add_argument('--min_box_area', type=float, default=10, help='filter out tiny boxes')
+    parser.add_argument('--min_box_area', type=float, default=4, help='filter out tiny boxes')
 
     args = parser.parse_args()
 
