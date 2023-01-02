@@ -37,7 +37,7 @@ def _indices_to_matches(cost_matrix, indices, thresh):
 
 
 def linear_assignment(cost_matrix, thresh):
-    print(f"cost_matrix shape: {cost_matrix.shape}")
+    #print(f"cost_matrix shape: {cost_matrix.shape}")
     if cost_matrix.size == 0:
         return np.empty((0, 2), dtype=int), tuple(range(cost_matrix.shape[0])), tuple(range(cost_matrix.shape[1]))
     matches, unmatched_a, unmatched_b = [], [], []
@@ -86,7 +86,6 @@ def iou_distance(atracks, btracks):
         atlbrs = [track.tlbr for track in atracks]
         btlbrs = [track.tlbr for track in btracks]
     _ious = ious(atlbrs, btlbrs)
-    print(f"_ious: {_ious}")
     cost_matrix = 1 - _ious
 
     return cost_matrix
