@@ -114,8 +114,8 @@ def frame_sampler(source, path, predictor, vis_folder, args):
                         tlbr[2:] += tlbr[:2]
                         tlbr=np.append(tlbr,[t.score, t.class_id])
                         predicted_bbox.append(tlbr)
-                        #vertical = tlwh[2] / tlwh[3] > args.aspect_ratio_thresh
-                        if tlwh[2] * tlwh[3] > args.min_box_area: #and not vertical:
+
+                        if tlwh[2] * tlwh[3] > args.min_box_area: 
                             online_tlwhs.append(tlwh)
                             online_ids.append(tid)
                             online_scores.append(t.score)
@@ -128,7 +128,6 @@ def frame_sampler(source, path, predictor, vis_folder, args):
                         image=img_info['raw_img'], tlwhs=online_tlwhs, obj_ids=online_ids, online_class_id=online_class_id, frame_id=frame_id + 1, fps=fps, scores=online_scores, class_names = cls_names
                     )
                     predicted_bbox = torch.tensor(np.array(predicted_bbox), dtype=torch.float32)
-                #    print(f"tensor_2: {predicted_bbox}")
 
                 else:
                     online_im = img_info['raw_img']
@@ -136,30 +135,29 @@ def frame_sampler(source, path, predictor, vis_folder, args):
             else:
                 print(predicted_bbox)
                 if predicted_bbox.nelement() != 0:
-                    # run kalman filter on the online targets, the following code need to be modified
                     print(f"bb: {predicted_bbox.shape}")
                     print(f"online target: {online_targets}")
-                    # use the existing track and kalman filter state to predict the detection bbox for the next frame
-                    predicted_bbox = []
-                    for each_track in online_targets:
+                    # use the existing track to predict the location and kalman filter state to update the detection bbox for the next frame
+                    predict_bbox = []
+                    for idx, each_track in enumerate(online_targets):
                         print(f"track id: {each_track.track_id} class: {each_track.class_id} ???????")
                         print(f"mean: {each_track.mean}")
+                        kf_adj = 1.5
 
-                        # dividing the last 4 state by the number of frame intervals in the kalman filter
-                        new_x = each_track.mean[0]+each_track.mean[4]
-                        new_y = each_track.mean[1]+each_track.mean[5]
-                        new_a = each_track.mean[2]+each_track.mean[6]
-                        new_h = each_track.mean[3]+each_track.mean[7]
+                        new_x = each_track.mean[0]+each_track.mean[4]/kf_adj
+                        new_y = each_track.mean[1]+each_track.mean[5]/kf_adj
+                        new_a = each_track.mean[2]+each_track.mean[6]/kf_adj
+                        new_h = each_track.mean[3]+each_track.mean[7]/kf_adj
                         new_w = new_a * new_h
                         tlwh = [math.ceil(new_x - new_w/2),math.ceil(new_y - new_h/2), int(new_w), int(new_h)]
 
                         # converting the predicted tlwh to tlbr and use this as the new detection bbox
                         tlbr = np.asarray(tlwh).copy()
                         tlbr[2:] += tlbr[:2]
-                        tlbr=np.append(tlbr,[t.score, t.class_id])
-                        predicted_bbox.append(tlbr)
+                        tlbr=np.append(tlbr,[predicted_bbox[idx][4], predicted_bbox[idx][5]])
+                        predict_bbox.append(tlbr)
 
-                    predicted_bbox = torch.tensor(np.array(predicted_bbox), dtype=torch.float32)
+                    predicted_bbox = torch.tensor(np.array(predict_bbox), dtype=torch.float32)
 
                     # using the predicted bbox as the new detection result and feed into the tracker update
                     online_targets = tracker.new_update(predicted_bbox, [img_info['height'], img_info['width']], exp.test_size)
@@ -180,35 +178,15 @@ def frame_sampler(source, path, predictor, vis_folder, args):
                             results.append(
                                 f"{frame_id},{tid},{tlwh[0]:.2f},{tlwh[1]:.2f},{tlwh[2]:.2f},{tlwh[3]:.2f},{t.score:.2f},-1,-1,-1\n"
                             )
-                        # print(f"tlwh after first kalman: {tlwh}")
-                        # each_track.mean[0] = new_x
-                        # each_track.mean[1] = new_y
-                        # each_track.mean[2] = new_a
-                        # each_track.mean[3] = new_h
-                        # if tlwh[2] * tlwh[3] > args.min_box_area:
-                        #     online_tlwhs.append(tlwh)
-                        #     online_ids.append(each_track.track_id)
-                        #     online_scores.append(each_track.score)
-                        #     online_class_id.append(each_track.class_id)
+
                     online_im = plot_tracking(
                         image=img_info['raw_img'], tlwhs=online_tlwhs, obj_ids=online_ids, online_class_id=online_class_id, frame_id=frame_id + 1, fps=fps, scores=online_scores, class_names = cls_names
                     )
 
                 else:
                     online_im = img_info['raw_img']
-
-
-
-            # if (frame_idx % num_track) == 0:
-            #     outputs, img_info = predictor.inference(frame)
-            #     print(outputs)
-            #     print(img_info)
-            #     result_frame = predictor.visual(outputs[0], img_info, predictor.confthre)
-            # else:
-            #     result_frame = frame
             
             frame_id +=1
-           #frame_id = frame_id % num_track
 
             if args.save_result:
                 vid_writer.write(online_im)
