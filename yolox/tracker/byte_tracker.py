@@ -22,6 +22,7 @@ class STrack(BaseTrack):
         self.class_id = int(class_id)
         self.score = score
         self.tracklet_len = 0
+        self.first_seen = True
 
     def predict(self):
         mean_state = self.mean.copy()
@@ -88,7 +89,7 @@ class STrack(BaseTrack):
             self.mean, self.covariance, self.tlwh_to_xyah(new_tlwh))
         self.state = TrackState.Tracked
         self.is_activated = True
-
+        self.class_id = int(new_track.class_id)
         self.score = new_track.score
 
     @property
@@ -276,19 +277,10 @@ class BYTETracker(object):
                 track.re_activate(det, self.frame_id, new_id=False)
                 print(f"track {track} is reactivated !!!!!!!!!!!!!!!!!")
                 refind_stracks.append(track)
-        # mark the rest of tracks as lost tracks
-        for it in u_track:
-            track = r_tracked_stracks[it]
-            if not track.state == TrackState.Lost:
-                track.mark_lost()
-                lost_stracks.append(track)
-
+        
         '''Deal with unconfirmed tracks, usually tracks with only one beginning frame'''
-        # the following seems only dealing the unconfirmed with the high score unmatched
         detections = [detections[i] for i in u_detection]
         dists = matching.iou_distance(unconfirmed, detections)
-        # if not self.args.mot20:
-        #     dists = matching.fuse_score(dists, detections)
         matches, u_unconfirmed, u_detection = matching.linear_assignment(dists, thresh=0.7)
         for itracked, idet in matches:
             unconfirmed[itracked].update(detections[idet], self.frame_id)
@@ -299,16 +291,65 @@ class BYTETracker(object):
             track.mark_removed()
             removed_stracks.append(track)
 
+
         """ Step 4: Init new stracks"""
+        tmp_active=[]
         for inew in u_detection:
             print("creating new trackssssssssssssssssss!")
             track = detections[inew]
-            print(track.score)
             if track.score < self.det_thresh:
                 continue
             track.activate(self.kalman_filter, self.frame_id)
-            activated_stracks.append(track)
+            tmp_active.append(track)
+            
             print(f"activated_stracks: {activated_stracks}")
+
+        """ matching new track with fast moving object"""
+        # matching the fast moving objects:
+        # find the un matched tracks
+        rem_tracks = [r_tracked_stracks[i] for i in u_track]
+        print(f"rem_tracks: {rem_tracks}")
+        print(f"tmp active: {tmp_active}")
+        # find the unmatched detections with high detection scores
+        detections = tmp_active 
+        dist = matching.iou_distance(rem_tracks, tmp_active)
+        print(f"dist: {dist} length: {len(dist)} type:{type(dist)}")
+        if dist.size != 0:
+            print(f"!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!dist: {dist} length: {len(dist)}")
+            tmp_match = list(np.argmin(dist,axis=1))
+            for idx, each in enumerate(tmp_match):
+                if dist[idx][each]==1:
+                    tmp_match[idx]=-1
+            print(f"!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!tmp_match: {tmp_match}")
+            print(f"detections: {detections}")
+            for idx, each in enumerate(tmp_match):
+                if each != -1:
+                    print(f"fast track: {rem_tracks[idx]}")
+                    print(f"fast track mean: {rem_tracks[idx].mean}")
+                    print(f"corresponding detection: {detections[each]}")
+                    print(f"corresponding detection mean: {detections[each].mean}")
+                    if abs(rem_tracks[idx].mean[4] < 1) and abs(rem_tracks[idx].mean[5] < 1) and abs(rem_tracks[idx].mean[6] < 1) and abs(rem_tracks[idx].mean[7] < 1):
+                        if abs(detections[each].mean[4]<0.0001) and abs(detections[each].mean[5]<0.0001) and abs(detections[each].mean[6]<0.0001) and abs(detections[each].mean[7]<0.0001):
+                            print(f"fast track: {rem_tracks[idx]}")
+                            print(f"corresponding detection: {detections[each]}")
+                            rem_tracks[idx].update(detections[each],self.frame_id)
+                            activated_stracks.append(rem_tracks[idx])
+
+            # mark the rest of tracks as lost tracks, need to move to later section
+            for idx, each in enumerate(tmp_match):
+                if each == -1:
+                    track = rem_tracks[idx]
+                    if not track.state == TrackState.Lost:
+                        track.mark_lost()
+                        lost_stracks.append(track)
+
+            for idx, each in enumerate(tmp_active):
+                if idx not in tmp_match or len(tmp_match)==0:
+                    activated_stracks.append(each)
+        else:
+            for idx, each in enumerate(tmp_active):
+                activated_stracks.append(each)
+
         """ Step 5: Update state"""
         for track in self.lost_stracks:
             if self.frame_id - track.end_frame > self.max_time_lost:

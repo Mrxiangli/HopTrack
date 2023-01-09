@@ -143,19 +143,19 @@ def frame_sampler(source, path, predictor, vis_folder, args):
                         print(f"track id: {each_track.track_id} class: {each_track.class_id} ???????")
                         print(f"mean: {each_track.mean}")
                         kf_adj = 1.5
+                        if each_track.mean[2]* each_track.mean[3] > args.min_box_area:
+                            new_x = each_track.mean[0]+each_track.mean[4]/kf_adj
+                            new_y = each_track.mean[1]+each_track.mean[5]/kf_adj
+                            new_a = each_track.mean[2]+each_track.mean[6]/kf_adj
+                            new_h = each_track.mean[3]+each_track.mean[7]/kf_adj
+                            new_w = new_a * new_h
+                            tlwh = [math.ceil(new_x - new_w/2),math.ceil(new_y - new_h/2), int(new_w), int(new_h)]
 
-                        new_x = each_track.mean[0]+each_track.mean[4]/kf_adj
-                        new_y = each_track.mean[1]+each_track.mean[5]/kf_adj
-                        new_a = each_track.mean[2]+each_track.mean[6]/kf_adj
-                        new_h = each_track.mean[3]+each_track.mean[7]/kf_adj
-                        new_w = new_a * new_h
-                        tlwh = [math.ceil(new_x - new_w/2),math.ceil(new_y - new_h/2), int(new_w), int(new_h)]
-
-                        # converting the predicted tlwh to tlbr and use this as the new detection bbox
-                        tlbr = np.asarray(tlwh).copy()
-                        tlbr[2:] += tlbr[:2]
-                        tlbr=np.append(tlbr,[predicted_bbox[idx][4], predicted_bbox[idx][5]])
-                        predict_bbox.append(tlbr)
+                            # converting the predicted tlwh to tlbr and use this as the new detection bbox
+                            tlbr = np.asarray(tlwh).copy()
+                            tlbr[2:] += tlbr[:2]
+                            tlbr=np.append(tlbr,[predicted_bbox[idx][4], predicted_bbox[idx][5]])
+                            predict_bbox.append(tlbr)
 
                     predicted_bbox = torch.tensor(np.array(predict_bbox), dtype=torch.float32)
 

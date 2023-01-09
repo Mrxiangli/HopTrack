@@ -72,7 +72,7 @@ def ious(atlbrs, btlbrs):
 
 def track_print(tk):
     print(f"track tlwh : {tk._tlwh}")
-    print(f"track id : {tk.class_id}")
+    print(f"track class : {tk.class_id}; track id : {tk.track_id}")
 
 
 def iou_distance(atracks, btracks):
