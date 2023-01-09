@@ -85,6 +85,7 @@ def iou_distance(atracks, btracks):
     else:
         atlbrs = [track.tlbr for track in atracks]
         btlbrs = [track.tlbr for track in btracks]
+    # print(atlbrs, '?????????????????', btlbrs)
     _ious = ious(atlbrs, btlbrs)
     cost_matrix = 1 - _ious
 
