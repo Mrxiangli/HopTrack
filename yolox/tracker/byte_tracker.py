@@ -49,7 +49,7 @@ class STrack(BaseTrack):
         self.kalman_filter = kalman_filter
         self.track_id = self.next_id()
         self.mean, self.covariance = self.kalman_filter.initiate(self.tlwh_to_xyah(self._tlwh))
-        print(f"mean after kalman init: {self.mean}")
+        #print(f"mean after kalman init: {self.mean}")
 
         self.tracklet_len = 0
         self.state = TrackState.Tracked
@@ -184,7 +184,7 @@ class BYTETracker(object):
         ## detection with high scores
         print(f"scores: {scores}")
         remain_inds = scores > self.args.track_thresh
-        inds_low = scores > 0.1
+        inds_low = scores > 0.4
         inds_high = scores < self.args.track_thresh
         print(f"remain {remain_inds}")
         print(f"low {inds_low}")
@@ -328,12 +328,30 @@ class BYTETracker(object):
                     print(f"fast track mean: {rem_tracks[idx].mean}")
                     print(f"corresponding detection: {detections[each]}")
                     print(f"corresponding detection mean: {detections[each].mean}")
-                    if abs(rem_tracks[idx].mean[4] < 1) and abs(rem_tracks[idx].mean[5] < 1) and abs(rem_tracks[idx].mean[6] < 1) and abs(rem_tracks[idx].mean[7] < 1):
-                        if abs(detections[each].mean[4]<0.0001) and abs(detections[each].mean[5]<0.0001) and abs(detections[each].mean[6]<0.0001) and abs(detections[each].mean[7]<0.0001):
-                            print(f"fast track: {rem_tracks[idx]}")
-                            print(f"corresponding detection: {detections[each]}")
-                            rem_tracks[idx].update(detections[each],self.frame_id)
-                            activated_stracks.append(rem_tracks[idx])
+                    #if abs(rem_tracks[idx].mean[4] < 1) and abs(rem_tracks[idx].mean[5] < 1) and abs(rem_tracks[idx].mean[6] < 1) and abs(rem_tracks[idx].mean[7] < 1):
+                    if abs(detections[each].mean[4]<0.0001) and abs(detections[each].mean[5]<0.0001) and abs(detections[each].mean[6]<0.0001) and abs(detections[each].mean[7]<0.0001):
+                        #if rem_tracks[idx].class_id == detections[each].class_id:
+                        print(f"fast track: {rem_tracks[idx]}")
+                        print(f"corresponding detection: {detections[each]}")
+                        ot_x, ot_y, ot_w, ot_h = rem_tracks[idx]._tlwh
+                        print(f"old track {rem_tracks[idx]._tlwh}")
+                        rem_tracks[idx].update(detections[each],self.frame_id)
+                        # since the high speed objects and the new detection has low ious, it was treated as two seperated objects initially and both will has 0 for last 4 kalman states,
+                        nd_x, nd_y, nd_w, nd_h = detections[each]._tlwh
+                        print(f"new_detection {detections[each]._tlwh}")
+                        old_center_x = ot_x + ot_w/2
+                        old_center_y = ot_y + ot_h/2
+                        new_center_x = nd_x + nd_w/2
+                        new_center_y = nd_y + nd_h/2
+                        new_vx = (new_center_x - old_center_x)/9 # cuz we have 10 frames in the middle, need to change correspondingly
+                        new_vy = (new_center_y - old_center_y)/9 # keep 7 for the traffic video test
+                        #new_vh = (nd_h - ot_h)
+                        #new_va = (nd_w/nd_h)/(ot_w/ot_h)
+                        rem_tracks[idx].mean[4] = new_vx  
+                        rem_tracks[idx].mean[5] = new_vy
+                        #rem_tracks[idx].mean[6] = new_vh
+                        #rem_tracks[idx].mean[7] = new_va
+                        activated_stracks.append(rem_tracks[idx])
 
             # mark the rest of tracks as lost tracks, need to move to later section
             for idx, each in enumerate(tmp_match):
@@ -452,8 +470,10 @@ class BYTETracker(object):
             track = strack_pool[itracked]
             det = detections[idet]
             if track.state == TrackState.Tracked:
-                #print("updaing tlwh")
-                track.update(detections[idet], self.frame_id)
+                print("updating the kalman state")
+                print(f"kalman state before: {track.mean}")
+                track.update(det, self.frame_id)
+                print(f"kalman state after: {track.mean}")
                 #print(f"updated track: id: {track.class_id}, {track.tlwh}")
                 activated_stracks.append(track)
             else:
@@ -483,7 +503,10 @@ class BYTETracker(object):
             track = r_tracked_stracks[itracked]
             det = detections_second[idet]
             if track.state == TrackState.Tracked:
+                print("updating the kalman state")
+                print(f"kalman state before: {track.mean}")
                 track.update(det, self.frame_id)
+                print(f"kalman state after: {track.mean}")
                 activated_stracks.append(track)
             else:
                 track.re_activate(det, self.frame_id, new_id=False)
@@ -505,7 +528,10 @@ class BYTETracker(object):
                 track = r_tracked_stracks[itracked]
                 det = unmatched_detections[idet]
                 if track.state == TrackState.Tracked:
+                    print("updating the kalman state")
+                    print(f"kalman state before: {track.mean}")
                     track.update(det, self.frame_id)
+                    print(f"kalman state after: {track.mean}")
                     activated_stracks.append(track)
                    
                 else:

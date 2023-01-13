@@ -5,6 +5,7 @@ import os,sys
 import time
 from loguru import logger
 from utils import EXP, Predictor
+import json
 
 sys.path.insert(0, '/data/xiang/video_collab/para_det_trk')
 
@@ -76,8 +77,10 @@ def frame_sampler(source, path, predictor, vis_folder, args):
     while ret == False:
         ret, frame = cap.read()
 
-    num_track = trail_run(predictor, frame, fps)
+    #num_track = trail_run(predictor, frame, fps)               #uncomment this when testing latency
     tracker = BYTETracker(args, frame_rate=math.ceil(fps))
+    light_multi_tracker = cv2.MultiTracker_create()
+    detection_result = {}
     
     frame_id = 0
     results = []
@@ -86,12 +89,18 @@ def frame_sampler(source, path, predictor, vis_folder, args):
     while True:
         ret_val, frame = cap.read()
         if ret_val:
+            # for mota purpose
+            if frame_id not in detection_result.keys():
+                detection_result[frame_id]={}
+
             print(f"=====================================================frame {frame_id}============================================")
             height, width = frame.shape[:2]
             img_info["height"] = height
             img_info["width"] = width
             img_info["raw_img"] = frame
             if frame_id % 10 == 0:
+                light_multi_tracker.clear()
+                light_multi_tracker = cv2.MultiTracker_create()
                 outputs, img_info = predictor.inference(frame)
                 print(f"detection result: {outputs}")
                 # the mean in the kalman filter object has all 8 states, potentially expose that to the following interface and do prediction.
@@ -106,13 +115,17 @@ def frame_sampler(source, path, predictor, vis_folder, args):
                     online_scores = []
                     online_class_id = []
                     predicted_bbox = []
-                    for t in online_targets:
+                    light_tracker_list = []
+                    light_tracker_id = []
+
+                    for idx_t, t in enumerate(online_targets):
                         tlwh = t.tlwh
-                        print(f"tlwh: {tlwh}")
                         tid = t.track_id
+                        print(f"tid: {tid}  tlwh: {tlwh}")
                         tlbr = np.asarray(tlwh).copy()
                         tlbr[2:] += tlbr[:2]
                         tlbr=np.append(tlbr,[t.score, t.class_id])
+                        tlbr=np.append(tlbr,[tid,t.mean])
                         predicted_bbox.append(tlbr)
 
                         if tlwh[2] * tlwh[3] > args.min_box_area: 
@@ -120,44 +133,117 @@ def frame_sampler(source, path, predictor, vis_folder, args):
                             online_ids.append(tid)
                             online_scores.append(t.score)
                             online_class_id.append(t.class_id)
+                            if t.mean[4] < 0.00001 and  t.mean[5] < 0.00001 and t.mean[6] < 0.00001 and t.mean[7] < 0.00001:
+                                light_tracker_list.append((t.tlwh[0],t.tlwh[1],t.tlwh[2],t.tlwh[3]))
+                                light_tracker_id.append(tid)
                             results.append(
                                 f"{frame_id},{tid},{tlwh[0]:.2f},{tlwh[1]:.2f},{tlwh[2]:.2f},{tlwh[3]:.2f},{t.score:.2f},-1,-1,-1\n"
                             )
+                            detection_result[frame_id][t.track_id]=(t.tlwh[0],t.tlwh[1],t.tlwh[2],t.tlwh[3])
+
+                    print(f"light list: {light_tracker_list}")
+                    for each in light_tracker_list:
+                        light_multi_tracker.add(cv2.TrackerMedianFlow_create(), frame, each)
+
                     print("=======plot track=================")
                     online_im = plot_tracking(
                         image=img_info['raw_img'], tlwhs=online_tlwhs, obj_ids=online_ids, online_class_id=online_class_id, frame_id=frame_id + 1, fps=fps, scores=online_scores, class_names = cls_names
                     )
-                    predicted_bbox = torch.tensor(np.array(predicted_bbox), dtype=torch.float32)
+                    #predicted_bbox = torch.tensor(np.array(predicted_bbox), dtype=torch.float32)
 
                 else:
                     online_im = img_info['raw_img']
 
+
             else:
+                # for mota purpose
+                if frame_id not in detection_result.keys():
+                    detection_result[frame_id]={}
+
                 print(predicted_bbox)
-                if predicted_bbox.nelement() != 0:
-                    print(f"bb: {predicted_bbox.shape}")
+                if len(predicted_bbox) != 0:
+                    print(predicted_bbox[0][7])
+                    #print(f"bb: {predicted_bbox.shape}")
                     print(f"online target: {online_targets}")
-                    # use the existing track to predict the location and kalman filter state to update the detection bbox for the next frame
+
+                    light_track_ok, light_track_bbox = light_multi_tracker.update(frame)
                     predict_bbox = []
+                    kf_adj = 1  ## keep 1.1 for virat_001 
                     for idx, each_track in enumerate(online_targets):
-                        print(f"track id: {each_track.track_id} class: {each_track.class_id} ???????")
-                        print(f"mean: {each_track.mean}")
-                        kf_adj = 1.5
-                        if each_track.mean[2]* each_track.mean[3] > args.min_box_area:
+                        # check if the bbox is in the light_tracker_list -> new track or reinitiated track 
+                        
+                        if light_track_ok and each_track.track_id in light_tracker_id:
+                            if each_track.track_id in light_tracker_id:
+                                light_id = light_tracker_id.index(each_track.track_id)
+                                new_bbox = light_track_bbox[light_id]
+                                # need to convert from tlwh to tlbr
+                                predict_bbox.append([new_bbox[0], new_bbox[1], new_bbox[2]+new_bbox[0], new_bbox[3]+new_bbox[1], predicted_bbox[idx][4], predicted_bbox[idx][5]])
+                            else:
+                                
+
+                                new_x = each_track.mean[0]+each_track.mean[4]/kf_adj
+                                new_y = each_track.mean[1]+each_track.mean[5]/kf_adj
+                                new_a = each_track.mean[2]+each_track.mean[6]/kf_adj
+                                new_h = each_track.mean[3]+each_track.mean[7]/kf_adj
+                                new_w = new_a * new_h
+                                tlwh = [new_x - new_w/2, new_y - new_h/2, new_w, new_h]
+
+                                # converting the predicted tlwh to tlbr and use this as the new detection bbox
+                                tlbr = np.asarray(tlwh).copy()
+                                tlbr[2:] += tlbr[:2]
+                                tlbr=np.append(tlbr,[predicted_bbox[idx][4], predicted_bbox[idx][5]])
+                                predict_bbox.append(tlbr)
+                        else:
                             new_x = each_track.mean[0]+each_track.mean[4]/kf_adj
                             new_y = each_track.mean[1]+each_track.mean[5]/kf_adj
                             new_a = each_track.mean[2]+each_track.mean[6]/kf_adj
                             new_h = each_track.mean[3]+each_track.mean[7]/kf_adj
                             new_w = new_a * new_h
-                            tlwh = [math.ceil(new_x - new_w/2),math.ceil(new_y - new_h/2), int(new_w), int(new_h)]
+                            tlwh = [new_x - new_w/2, new_y - new_h/2, new_w, new_h]
 
                             # converting the predicted tlwh to tlbr and use this as the new detection bbox
                             tlbr = np.asarray(tlwh).copy()
                             tlbr[2:] += tlbr[:2]
                             tlbr=np.append(tlbr,[predicted_bbox[idx][4], predicted_bbox[idx][5]])
                             predict_bbox.append(tlbr)
+                            
+                    print(f"after processsing :{predict_bbox}")
 
+                    
+
+                    # if light_track_ok:
+                    #     bbox_i=0
+                    #     for each in light_tracker_id:
+                    #         new_bbox=light_track_bbox[bbox_i]
+                    #         for t in online_targets:
+                    #             if t.track_id == each: 
+                    #                 t.mean[0] = new_bbox[0] + new_bbox[2]/2 
+                    #                 t.mean[1] = new_bbox[1] + new_bbox[3]/2
+                    #                 t.mean[2] = new_bbox[2]/new_bbox[3]
+                    #                 t.mean[3] = new_bbox[3]
+                    #                 bbox_i += 1
+
+                    # use the existing track to predict the location and kalman filter state to update the detection bbox for the next frame
+                    # predict_bbox = []
+                    # for idx, each_track in enumerate(online_targets):
+                    #     print(f"track id: {each_track.track_id} class: {each_track.class_id} ???????")
+                    #     print(f"mean: {each_track.mean}")
+                    #     kf_adj = 1.03  ## keep 1.1 for virat_001 
+                    #     if each_track.mean[2]* each_track.mean[3] > args.min_box_area:
+                    #         new_x = each_track.mean[0]+each_track.mean[4]/kf_adj
+                    #         new_y = each_track.mean[1]+each_track.mean[5]/kf_adj
+                    #         new_a = each_track.mean[2]+each_track.mean[6]/kf_adj
+                    #         new_h = each_track.mean[3]+each_track.mean[7]/kf_adj
+                    #         new_w = new_a * new_h
+                    #         tlwh = [new_x - new_w/2, new_y - new_h/2, new_w, new_h]
+
+                    #         # converting the predicted tlwh to tlbr and use this as the new detection bbox
+                    #         tlbr = np.asarray(tlwh).copy()
+                    #         tlbr[2:] += tlbr[:2]
+                    #         tlbr=np.append(tlbr,[predicted_bbox[idx][4], predicted_bbox[idx][5]])
+                    #         predict_bbox.append(tlbr)
                     predicted_bbox = torch.tensor(np.array(predict_bbox), dtype=torch.float32)
+
 
                     # using the predicted bbox as the new detection result and feed into the tracker update
                     online_targets = tracker.new_update(predicted_bbox, [img_info['height'], img_info['width']], exp.test_size)
@@ -165,10 +251,18 @@ def frame_sampler(source, path, predictor, vis_folder, args):
                     online_ids = []
                     online_scores = []
                     online_class_id = []
+                    predicted_bbox = []
+
                     for t in online_targets:
                         tlwh = t.tlwh
-                        print(f"tlwh: {tlwh}")
+                        
                         tid = t.track_id
+                        tlbr = np.asarray(tlwh).copy()
+                        tlbr[2:] += tlbr[:2]
+                        tlbr=np.append(tlbr,[t.score, t.class_id])
+                        tlbr=np.append(tlbr,[tid,t.mean])
+                        predicted_bbox.append(tlbr)
+
                         #vertical = tlwh[2] / tlwh[3] > args.aspect_ratio_thresh
                         if tlwh[2] * tlwh[3] > args.min_box_area: #and not vertical:
                             online_tlwhs.append(tlwh)
@@ -178,6 +272,8 @@ def frame_sampler(source, path, predictor, vis_folder, args):
                             results.append(
                                 f"{frame_id},{tid},{tlwh[0]:.2f},{tlwh[1]:.2f},{tlwh[2]:.2f},{tlwh[3]:.2f},{t.score:.2f},-1,-1,-1\n"
                             )
+                            detection_result[frame_id][t.track_id]=(t.tlwh[0],t.tlwh[1],t.tlwh[2],t.tlwh[3])
+
 
                     online_im = plot_tracking(
                         image=img_info['raw_img'], tlwhs=online_tlwhs, obj_ids=online_ids, online_class_id=online_class_id, frame_id=frame_id + 1, fps=fps, scores=online_scores, class_names = cls_names
@@ -201,7 +297,8 @@ def frame_sampler(source, path, predictor, vis_folder, args):
             break
     video_end = time.time()
     print(f"video processing time is {video_end - video_start}")
-
+    with open("traffic_2.json",'w') as fp:
+        json.dump(detection_result,fp)  
     cap.release()
     cv2.destroyAllWindows()
 
