@@ -1,24 +1,23 @@
-import argparse, cv2
 import os
-import argparse
-import os,sys
+import sys
+import cv2
 import time
+import math
+import json
+import argparse
+import numpy as np
 from loguru import logger
 from utils import EXP, Predictor
+from collections import defaultdict
 
-sys.path.insert(0, '/data/xiang/video_collab/para_det_trk')
-
-import cv2
 import torch
-import math
-import numpy as np
 
-from yolox.data.data_augment import ValTransform
 from yolox.data.datasets import COCO_CLASSES
-from yolox.utils import fuse_model, get_model_info, postprocess, vis
-from yolox.utils.visualize import plot_tracking
-from yolox.tracker.byte_tracker import STrack, BYTETracker
 from yolox.tracking_utils.timer import Timer
+from yolox.utils.visualize import plot_tracking
+from yolox.data.data_augment import ValTransform
+from yolox.utils import fuse_model, get_model_info, postprocess, vis
+from yolox.tracker.byte_tracker import STrack, BYTETracker, joint_stracks
 
 
 ################################################
@@ -46,7 +45,10 @@ def trail_run(predictor, frame, fps):
 #
 ################################################
 def frame_sampler(source, path, predictor, vis_folder, args):
-    
+
+    ## Used for MOTA/MOTP etc.
+    detection_results = defaultdict(dict)
+
     cls_names = COCO_CLASSES
 
     if source == "webcam":
@@ -81,10 +83,10 @@ def frame_sampler(source, path, predictor, vis_folder, args):
     
     frame_id = 0
     results = []
-    video_start = time.time()
     img_info = {}
     online_targets = []
-    #predicted_bbox = torch.tensor(np.array([]), dtype=torch.float32)
+    video_start = time.time()
+
     while True:
         ret_val, frame = cap.read()
         if ret_val:
@@ -93,61 +95,60 @@ def frame_sampler(source, path, predictor, vis_folder, args):
             img_info["height"] = height
             img_info["width"] = width
             img_info["raw_img"] = frame
-            #print(img_info)
-            #print(exp.test_size)
 
-            if frame_id % 5 == 0:
-                print(f"  ===================================================Inference========================================")
+            if frame_id % 10 == 0:
+                light_track_id = []
+                multiTracker = cv2.legacy.MultiTracker_create()
+
+                #print(f"  ===================================================Inference========================================")
                 outputs, img_info = predictor.inference(frame)
-                print(f"detection result:\n\t{outputs}")
+                #print(f"detection result:\n\t{outputs}")
                 # the mean in the kalman filter object has all 8 states, potentially expose that to the following interface and do prediction.
                 if outputs[0] is not None:
                     online_targets = tracker.update(outputs[0], [img_info['height'], img_info['width']], exp.test_size, frame_id)
-                    print(f"online_targets:\n\t{online_targets}")
-                    # if frame_id == 50:
-                    #     import sys
-                    #     sys.exit()
+                    #print(f"online_targets:\n\t{online_targets}")
                     online_tlwhs = []
                     online_ids = []
                     online_scores = []
                     online_class_id = []
-                    #predicted_bbox = []
                     for t in online_targets:
-                        # tlwh = t.tlwh
-                        # print(f"tlwh: {tlwh}")
-                        # tid = t.track_id
-                        # tlbr = np.asarray(tlwh).copy()
-                        # tlbr[2:] += tlbr[:2]
-                        # tlbr=np.append(tlbr,[t.score, t.class_id])
-                        # predicted_bbox.append(tlbr)
-                        #vertical = tlwh[2] / tlwh[3] > args.aspect_ratio_thresh
-                        if t.tlwh[2] * t.tlwh[3] > args.min_box_area: #and not vertical:
+                        if t.tlwh[2] * t.tlwh[3] > args.min_box_area:
+                            if sum(t.mean[4:]) == 0.0:
+                                multiTracker.add(cv2.legacy.TrackerMedianFlow_create(), frame, t.tlwh)
+                                light_track_id.append(t.track_id)
                             online_tlwhs.append(t.tlwh)
                             online_ids.append(t.track_id)
                             online_scores.append(t.score)
                             online_class_id.append(t.class_id)
-                            # results.append(
-                            #     f"{frame_id},{tid},{tlwh[0]:.2f},{tlwh[1]:.2f},{tlwh[2]:.2f},{tlwh[3]:.2f},{t.score:.2f},-1,-1,-1\n"
-                            # )
-                    print("==============plot track=================")
+                            detection_results[frame_id][t.track_id] = list(t.tlwh)
+                    #print("==============plot track=================")
                     online_im = plot_tracking(
                         image=img_info['raw_img'], tlwhs=online_tlwhs, obj_ids=online_ids, online_class_id=online_class_id, frame_id=frame_id + 1, fps=fps, scores=online_scores, class_names = cls_names
                     )
-                    # predicted_bbox = torch.tensor(np.array(predicted_bbox), dtype=torch.float32)
-
+                    #online_im = img_info['raw_img']
                 else:
                     online_im = img_info['raw_img']
+                #print(f"========================================================================================================")
 
-
-                print(f"========================================================================================================")
-            
             else:
-
-                print(f" =====================================================Track============================================")
-                STrack.multi_predict(online_targets)
+                #print(f" =====================================================Track============================================")
+                # start = time.time()
+                # print("Light track,", light_track_id)
+                (success, bboxes) = multiTracker.update(frame)
+                # end = time.time()
+                # print('MedianFlow time, ', end - start)
+                STrack.multi_predict(joint_stracks(online_targets, tracker.lost_stracks))
+                #print(success, light_track_id)
                 for track in online_targets:
-                    track.update(track, frame_id)
-                print(f"online_targets:\n\t{online_targets}")
+                    track.frame_id = frame_id
+                    if not success or track.track_id not in light_track_id:
+                        pass
+                    else:
+                        light_id = light_track_id.index(track.track_id)
+                        new_bbox = bboxes[light_id]
+                        track.mean, track.covariance = track.kalman_filter.update(track.mean, track.covariance, track.tlwh_to_xyah(new_bbox))
+
+                #print(f"online_targets:\n\t{online_targets}")
 
                 online_tlwhs = []
                 online_ids = []
@@ -159,89 +160,22 @@ def frame_sampler(source, path, predictor, vis_folder, args):
                         online_ids.append(t.track_id)
                         online_scores.append(t.score)
                         online_class_id.append(t.class_id)
+                        detection_results[frame_id][t.track_id] = list(t.tlwh)
                 online_im = plot_tracking(
                     image=img_info['raw_img'], tlwhs=online_tlwhs, obj_ids=online_ids, online_class_id=online_class_id, frame_id=frame_id + 1, fps=fps, scores=online_scores, class_names = cls_names
                 )
+                #online_im = img_info['raw_img']
 
+            frame_id += 1
 
-
-
-
-
-
-
-                # print('Predicted BBOX:', predicted_bbox)
-                # if predicted_bbox.nelement() != 0:
-                #     # run kalman filter on the online targets, the following code need to be modified
-                #     print(f"bb: {predicted_bbox.shape}")
-                #     print(f"online target: {online_targets}")
-                #     # use the existing track and kalman filter state to predict the detection bbox for the next frame
-                #     predicted_bbox = []
-                #     for each_track in online_targets:
-                #         print(f"track id: {each_track.track_id} class: {each_track.class_id} ???????")
-                #         print(f"mean: {each_track.mean}")
-
-                #         # tlbr = np.asarray(each_track._tlwh).copy()
-                #         # tlbr[2:] += tlbr[:2]
-
-                #         # dividing the last 4 state by the number of frame intervals in the kalman filter
-                #         new_x = each_track.mean[0]+each_track.mean[4]
-                #         new_y = each_track.mean[1]+each_track.mean[5]
-                #         new_a = each_track.mean[2]+each_track.mean[6]
-                #         new_h = each_track.mean[3]+each_track.mean[7]
-                #         new_w = new_a * new_h
-                #         tlwh = [math.ceil(new_x - new_w/2),math.ceil(new_y - new_h/2), int(new_w), int(new_h)]
-
-                #         # converting the predicted tlwh to tlbr and use this as the new detection bbox
-                #         tlbr = np.asarray(tlwh).copy()
-                #         tlbr[2:] += tlbr[:2]
-
-                #         # a, b, c, d = tlbr
-                #         # if a > 0 and b > 0 and c < width and d < height:
-                #         tlbr = np.append(tlbr, [each_track.score, each_track.class_id])
-                #         predicted_bbox.append(tlbr)
-
-                #     predicted_bbox = torch.tensor(np.array(predicted_bbox), dtype=torch.float32)
-                #     print('Filtered\n\t', predicted_bbox)
-
-                #     # using the predicted bbox as the new detection result and feed into the tracker update
-                #     online_targets = tracker.new_update(predicted_bbox, [img_info['height'], img_info['width']], exp.test_size)
-                #     print('New Update\n\t', online_targets)
-
-                #     #assert(len(predicted_bbox) == len(online_targets))
-
-                #     online_tlwhs = []
-                #     online_ids = []
-                #     online_scores = []
-                #     online_class_id = []
-                #     for t in online_targets:
-                #         tlwh = t.tlwh
-                #         print(type(t))
-                #         print(f"tlwh: {tlwh}")
-                #         tid = t.track_id
-                #         if tlwh[2] * tlwh[3] > args.min_box_area:
-                #             online_tlwhs.append(tlwh)
-                #             online_ids.append(tid)
-                #             online_scores.append(t.score)
-                #             online_class_id.append(t.class_id)
-                #             results.append(
-                #                 f"{frame_id},{tid},{tlwh[0]:.2f},{tlwh[1]:.2f},{tlwh[2]:.2f},{tlwh[3]:.2f},{t.score:.2f},-1,-1,-1\n"
-                #             )
-                #     online_im = plot_tracking(
-                #         image=img_info['raw_img'], tlwhs=online_tlwhs, obj_ids=online_ids, online_class_id=online_class_id, frame_id=frame_id + 1, fps=fps, scores=online_scores, class_names = cls_names
-                #     )
-
-                # else:
-                #     online_im = img_info['raw_img']
-
-            frame_id +=1
+            # if frame_id == 900:
+            #     break
 
             if args.save_result:
                 vid_writer.write(online_im)
-                #cv2.imwrite(f'/data/xiang/video_collab/para_det_trk/imgs/{frame_id}.png', online_im)
             else:
                 cv2.namedWindow("yolox", cv2.WINDOW_NORMAL)
-                cv2.imshow("yolox", result_frame)
+                cv2.imshow("yolox", online_im)
             ch = cv2.waitKey(1)
             if ch == 27 or ch == ord("q") or ch == ord("Q"):
                 break
@@ -252,6 +186,12 @@ def frame_sampler(source, path, predictor, vis_folder, args):
 
     cap.release()
     cv2.destroyAllWindows()
+
+    # out_file = open(f"{os.path.basename(args.path).split('.')[0]}.json", "w")
+  
+    # json.dump(detection_results, out_file, indent=6)
+      
+    # out_file.close()
 
 
 if __name__ == '__main__':
@@ -334,3 +274,6 @@ if __name__ == '__main__':
     predictor = Predictor(model, exp, COCO_CLASSES, device, args.fp16, args.legacy)
 
     frame_sampler(args.source, args.path, predictor, vis_folder, args)
+
+
+
