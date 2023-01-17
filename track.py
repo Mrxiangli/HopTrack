@@ -232,11 +232,11 @@ def frame_sampler(source, path, engine, vis_folder, args, exp):
                             online_class_id.append(t.class_id)
                             detection_results[frame_id][t.track_id] = list(t.tlwh)
                     # print("==============plot track=================")
-                    online_im = plot_tracking(
-                        image=img_info['raw_img'], tlwhs=online_tlwhs, obj_ids=online_ids,
-                        online_class_id=online_class_id, frame_id=frame_id + 1,
-                        fps=fps, scores=online_scores, class_names=cls_names
-                    )
+                    # online_im = plot_tracking(
+                    #     image=img_info['raw_img'], tlwhs=online_tlwhs, obj_ids=online_ids,
+                    #     online_class_id=online_class_id, frame_id=frame_id + 1,
+                    #     fps=fps, scores=online_scores, class_names=cls_names
+                    # )
                 else:
                     online_im = img_info['raw_img']
                 # print(f"========================================================================================================")
@@ -273,21 +273,21 @@ def frame_sampler(source, path, engine, vis_folder, args, exp):
                         online_scores.append(t.score)
                         online_class_id.append(t.class_id)
                         detection_results[frame_id][t.track_id] = list(t.tlwh)
-                online_im = plot_tracking(
-                    image=img_info['raw_img'], tlwhs=online_tlwhs, obj_ids=online_ids, online_class_id=online_class_id,
-                    frame_id=frame_id + 1, fps=fps, scores=online_scores, class_names=cls_names
-                )
+                # online_im = plot_tracking(
+                #     image=img_info['raw_img'], tlwhs=online_tlwhs, obj_ids=online_ids, online_class_id=online_class_id,
+                #     frame_id=frame_id + 1, fps=fps, scores=online_scores, class_names=cls_names
+                # )
 
             frame_id += 1
 
             # if frame_id == 900:
             #     break
 
-            if args.save_result:
-                vid_writer.write(online_im)
-            else:
-                cv2.namedWindow("yolox", cv2.WINDOW_NORMAL)
-                cv2.imshow("yolox", online_im)
+            # if args.save_result:
+            #     vid_writer.write(online_im)
+            # else:
+            #     cv2.namedWindow("yolox", cv2.WINDOW_NORMAL)
+            #     cv2.imshow("yolox", online_im)
             ch = cv2.waitKey(1)
             if ch == 27 or ch == ord("q") or ch == ord("Q"):
                 break
@@ -299,11 +299,11 @@ def frame_sampler(source, path, engine, vis_folder, args, exp):
     cap.release()
     cv2.destroyAllWindows()
 
+    print("Dump detection results.")
     out_file = open(f"{os.path.basename(args.path).split('.')[0]}.json", "w")
-
     json.dump(detection_results, out_file, indent=6)
-
     out_file.close()
+    print("Complete dumping.")
 
 
 if __name__ == '__main__':

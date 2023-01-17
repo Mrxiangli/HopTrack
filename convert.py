@@ -38,8 +38,7 @@ if __name__ == '__main__':
 
     logger.info("Args: {}".format(args))
 
-    model = exp.get_model().cuda()
-    model.eval()
+    model = exp.get_model()
 
     logger.info("Model Summary: {}".format(get_model_info(model, exp.test_size)))
 
@@ -47,10 +46,11 @@ if __name__ == '__main__':
     ckpt = torch.load(args.ckpt, map_location="cpu")
     # load the model state dict
     model.load_state_dict(ckpt["model"])
+    model.eval()
     logger.info("loaded checkpoint done.")
 
     ONNX_FILE_PATH = args.model + '.onnx'
 
-    x = torch.rand(1, 3, 640, 640).cuda()
+    x = torch.rand(1, 3, 640, 640)
     torch.onnx.export(model, x, ONNX_FILE_PATH,
                       input_names=['input'], output_names=['output'], export_params=True, opset_version=11)
