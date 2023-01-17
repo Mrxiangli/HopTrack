@@ -26,16 +26,15 @@ import pycuda.driver as cuda
 
 ################################################
 #
-# A trial run on the model to calculate the mainlin inference latency
+# A trial run on the model to calculate the mainline inference latency
 # and use the mainline latency to determine \tau
 #
 ################################################
-def trail_run(predictor, frame, fps):
+def trial_run(engine, frame, fps, exp):
     for i in range(5):
-        outputs, img_info = predictor.inference(frame)
+        outputs, img_info = inference(engine, frame, exp)
     start = time.time()
-    outputs, img_info = predictor.inference(frame)
-    # result_frame = predictor.visual(outputs[0], img_info, predictor.confthre)
+    outputs, img_info = inference(engine, frame, exp)
     end = time.time()
     num_track = math.ceil((end-start)/(1/fps))
     print("system preheat")
@@ -117,17 +116,6 @@ def inference(engine, img, exp):
 
     img, _ = preproc(img, None, exp.test_size)
     img = torch.from_numpy(img).unsqueeze(0)
-    # if self.device == "gpu":
-    #     img = img.cuda()
-    #     if self.fp16:
-    #         img = img.half()  # to FP16
-
-    # with torch.no_grad():
-    #     t0 = time.time()
-    #     outputs = self.model(img)
-    #     print(outputs.shape)
-    #     outputs = postprocess(outputs, self.num_classes, self.confthre, self.nmsthre, class_agnostic=True)
-    #     logger.info("Infer time: {:.4f}s".format(time.time() - t0))
 
     host_input = np.array(img.contiguous(), dtype=np.float32, order='C')
 
@@ -198,7 +186,7 @@ def frame_sampler(source, path, engine, vis_folder, args, exp):
     while not ret:
         ret, frame = cap.read()
 
-    # num_track = trail_run(predictor, frame, fps)
+    num_track = trial_run(engine, frame, fps, exp)
     tracker = BYTETracker(args, frame_rate=math.ceil(fps))
     
     frame_id = 0
@@ -244,12 +232,11 @@ def frame_sampler(source, path, engine, vis_folder, args, exp):
                             online_class_id.append(t.class_id)
                             detection_results[frame_id][t.track_id] = list(t.tlwh)
                     # print("==============plot track=================")
-                    # online_im = plot_tracking(
-                    #     image=img_info['raw_img'], tlwhs=online_tlwhs, obj_ids=online_ids,
-                    #     online_class_id=online_class_id, frame_id=frame_id + 1,
-                    #     fps=fps, scores=online_scores, class_names=cls_names
-                    # )
-                    online_im = img_info['raw_img']
+                    online_im = plot_tracking(
+                        image=img_info['raw_img'], tlwhs=online_tlwhs, obj_ids=online_ids,
+                        online_class_id=online_class_id, frame_id=frame_id + 1,
+                        fps=fps, scores=online_scores, class_names=cls_names
+                    )
                 else:
                     online_im = img_info['raw_img']
                 # print(f"========================================================================================================")
@@ -286,22 +273,21 @@ def frame_sampler(source, path, engine, vis_folder, args, exp):
                         online_scores.append(t.score)
                         online_class_id.append(t.class_id)
                         detection_results[frame_id][t.track_id] = list(t.tlwh)
-                # online_im = plot_tracking(
-                #     image=img_info['raw_img'], tlwhs=online_tlwhs, obj_ids=online_ids, online_class_id=online_class_id,
-                #     frame_id=frame_id + 1, fps=fps, scores=online_scores, class_names=cls_names
-                # )
-                online_im = img_info['raw_img']
+                online_im = plot_tracking(
+                    image=img_info['raw_img'], tlwhs=online_tlwhs, obj_ids=online_ids, online_class_id=online_class_id,
+                    frame_id=frame_id + 1, fps=fps, scores=online_scores, class_names=cls_names
+                )
 
             frame_id += 1
 
             # if frame_id == 900:
             #     break
 
-            # if args.save_result:
-            #     vid_writer.write(online_im)
-            # else:
-            #     cv2.namedWindow("yolox", cv2.WINDOW_NORMAL)
-            #     cv2.imshow("yolox", online_im)
+            if args.save_result:
+                vid_writer.write(online_im)
+            else:
+                cv2.namedWindow("yolox", cv2.WINDOW_NORMAL)
+                cv2.imshow("yolox", online_im)
             ch = cv2.waitKey(1)
             if ch == 27 or ch == ord("q") or ch == ord("Q"):
                 break
@@ -314,9 +300,9 @@ def frame_sampler(source, path, engine, vis_folder, args, exp):
     cv2.destroyAllWindows()
 
     out_file = open(f"{os.path.basename(args.path).split('.')[0]}.json", "w")
-  
+
     json.dump(detection_results, out_file, indent=6)
-      
+
     out_file.close()
 
 
@@ -379,32 +365,12 @@ if __name__ == '__main__':
     if args.tsize is not None:
         exp.test_size = (args.tsize, args.tsize)
 
-    ONNX_FILE_PATH = 'trt.onnx'
+    ONNX_FILE_PATH = args.model + '.onnx'
 
     # initialize TensorRT engine and parse ONNX model
     engine, context = build_engine(ONNX_FILE_PATH)
-    
-    # model = exp.get_model()
-    #
-    # logger.info("Model Summary: {}".format(get_model_info(model, exp.test_size)))
-    #
-    # if torch.cuda.is_available():
-    #     device = "gpu"
-    # else:
-    #     device = "cpu"
-    #
-    # if torch.cuda.is_available():
-    #     model.cuda()
-    #     if args.fp16:
-    #         model.half()  # to FP16
-    # model.eval()
-    #
-    # logger.info("loading checkpoint")
-    # ckpt = torch.load(args.ckpt, map_location="cpu")
-    # # load the model state dict
-    # model.load_state_dict(ckpt["model"])
-    # logger.info("loaded checkpoint done.")
-    #
-    # predictor = Predictor(model, exp, COCO_CLASSES, device, args.fp16, args.legacy)
 
     frame_sampler(args.source, args.path, engine, vis_folder, args, exp)
+
+    # context.destroy()
+    # engine.destroy()
