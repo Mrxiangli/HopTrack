@@ -1,3 +1,8 @@
-__pycache__/
+__pycache__/*
 *.pth
 *.mp4
+*.json
+*.jpg
+*.onnx
+*.pyc
+.DS_Store

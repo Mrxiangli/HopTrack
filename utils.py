@@ -94,6 +94,7 @@ class Predictor(object):
         with torch.no_grad():
             t0 = time.time()
             outputs = self.model(img)
+            print(outputs.shape)
             outputs = postprocess(outputs, self.num_classes, self.confthre,self.nmsthre, class_agnostic=True)
             logger.info("Infer time: {:.4f}s".format(time.time() - t0))
         return outputs, img_info
