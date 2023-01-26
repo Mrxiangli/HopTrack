@@ -1,13 +1,18 @@
+from sklearn.cluster import DBSCAN
 import argparse, cv2
 import os
 import argparse
 import os,sys
 import time
 from loguru import logger
-from utils import EXP, Predictor
+from utils import EXP, Predictor, build_engine
 import json
-import numba
 import threading
+import tensorrt as trt
+import pycuda.driver as cuda
+import pycuda.autoinit
+import warnings
+
 
 sys.path.insert(0, '/data/xiang/video_collab/para_det_trk')
 
@@ -15,6 +20,7 @@ import cv2
 import torch
 import math
 import numpy as np
+warnings.filterwarnings("ignore", category=np.VisibleDeprecationWarning) 
 
 from yolox.data.data_augment import ValTransform
 from yolox.data.datasets import COCO_CLASSES
@@ -23,41 +29,46 @@ from yolox.utils.visualize import plot_tracking
 from yolox.tracker.byte_tracker import BYTETracker
 from yolox.tracking_utils.timer import Timer
 
-@numba.jit()
-def trajectory_finder(track):
-    # get an hint of the moving direction
-    tl_x, tl_y, width, height = track._tlwh
-    vx = track.mean[4]
-    vy = track.mean[5]
-    vel_ratio = abs(vx)/abs(vy)
-    
-    # moving percentage as 3% 
-    y_dis = 0.04 * height
-    x_dis = y_dis * vel_ratio
 
-    if abs(vx) > 0.5 and abs(vy) > 0.5:
-        x_dir = 1 if vx > 0 else -1
-        y_dir = 1 if vy > 0 else -1
+
+def dbscan_clustering(online_targets):
+    
+    centroid_list = []
+    tid_list = []
+    for each_track in online_targets:
+        tid, tlwh = each_track.track_id, each_track.tlwh
+        x,y,w,h = tlwh
+        tid_list.append(tid)
+        centroid_list.append([x+w/2, y+h/2])
+    cluster = DBSCAN(eps=50, min_samples=2).fit(centroid_list)
+   # print(cluster.labels_)
+    
+    cluster_dic = {}
+    cluster_num = 0
+    for idx, each in enumerate(cluster.labels_):
+        if each != -1 and each not in cluster_dic.keys():
+            cluster_dic[each]=[tid_list[idx]]
+            cluster_num += 1
+        else:
+            if each != -1:
+                cluster_dic[each].append(tid_list[idx])
+            else:
+                cluster_num += 1
+  #  print(cluster_dic)
+    return cluster_dic, cluster_num
+
+def detection_rate_adjuster(cluster_dic, cluster_num):
+    if cluster_num > 0 :
+        detection_rate = 5
     else:
-        x_dir = 0
-        y_dir = 0
+        detection_rate = 10
+    return detection_rate
     
-    tl_x_new = int(tl_x + x_dir * x_dis)
-    tl_y_new = int(tl_y + y_dir * y_dis)
-
-    return int(tl_x_new), int(tl_y_new), int(width), int(height)
-
-@numba.jit()
-def pixel_distribution(img, tl_x, tl_y, width, height):
-    new_img = img[tl_y:tl_y+height, tl_x:tl_x+width]
-    hist = cv2.calcHist([new_img],[0],None,[256],[0,256])
-    cv2.normalize(hist,hist,alpha=0, beta=1, norm_type=cv2.NORM_MINMAX)
-    return hist
 
 def trail_run(predictor, frame, fps):
     for i in range(5):
         outputs, img_info = predictor.inference(frame)
-    print("system preheat")
+  #  print("system preheat")
     start = time.time()
     outputs, img_info = predictor.inference(frame)
     result_frame = predictor.visual(outputs[0], img_info, predictor.confthre)
@@ -78,7 +89,7 @@ def frame_sampler(source, path, predictor, vis_folder, args):
     width = cap.get(cv2.CAP_PROP_FRAME_WIDTH) 
     height = cap.get(cv2.CAP_PROP_FRAME_HEIGHT) 
     fps = cap.get(cv2.CAP_PROP_FPS)
-    print(f"current frame rate: {fps} fps")
+  #  print(f"current frame rate: {fps} fps")
 
     if args.save_result:
         save_folder = os.path.join(vis_folder, time.strftime("%Y_%m_%d_%H_%M_%S", time.localtime()))
@@ -91,8 +102,12 @@ def frame_sampler(source, path, predictor, vis_folder, args):
 
         logger.info(f"video save_path is {save_path}")
         vid_writer = cv2.VideoWriter(save_path, cv2.VideoWriter_fourcc(*"mp4v"), fps, (int(width), int(height)))
-    ret_val, frame = cap.read()
-    num_track = trail_run(predictor, frame, fps)               #uncomment this when testing latency
+        
+
+
+
+   # ret_val, frame = cap.read()
+   # num_track = trail_run(predictor, frame, fps)               #uncomment this when testing latency
     tracker = BYTETracker(args, frame_rate=math.ceil(fps))
     light_multi_tracker = cv2.MultiTracker_create()
     detection_result = {}
@@ -103,6 +118,7 @@ def frame_sampler(source, path, predictor, vis_folder, args):
     img_info = {}
     img_info["height"] = height
     img_info["width"] = width
+    detection_rate = 1
     while True:
         ret_val, frame = cap.read()
         if ret_val:
@@ -114,7 +130,7 @@ def frame_sampler(source, path, predictor, vis_folder, args):
             
             img_info["raw_img"] = frame
 
-            if frame_id % 10 == 0:
+            if frame_id % detection_rate == 0:
                 det_start = time.time()
                 light_multi_tracker.clear()
                 light_multi_tracker = cv2.MultiTracker_create()
@@ -122,7 +138,7 @@ def frame_sampler(source, path, predictor, vis_folder, args):
 
                 # the mean in the kalman filter object has all 8 states, potentially expose that to the following interface and do prediction.
                 if outputs[0] is not None:
-                    online_targets = tracker.update(outputs[0], [img_info['height'], img_info['width']], exp.test_size)
+                    online_targets = tracker.update(outputs[0], [img_info['height'], img_info['width'], img_info["raw_img"]], exp.test_size)
 
                     online_tlwhs = []
                     online_ids = []
@@ -143,20 +159,25 @@ def frame_sampler(source, path, predictor, vis_folder, args):
                         predicted_bbox.append(tlbr)
 
                         if tlwh[2] * tlwh[3] > args.min_box_area: 
-                            t.color_dist = pixel_distribution(frame, int(t.tlwh[0]), int(t.tlwh[1]), int(t.tlwh[2]), int(t.tlwh[3]))
+                           # t.color_dist = pixel_distribution(frame, int(t.tlwh[0]), int(t.tlwh[1]), int(t.tlwh[2]), int(t.tlwh[3]))
                             online_tlwhs.append(tlwh)
                             online_ids.append(tid)
                             online_scores.append(t.score)
                             online_class_id.append(t.class_id)
                             
-                            if t.first_seen:
+                            if t.mean[4] == 0 and t.mean[5] == 0 and t.mean[6] == 0 and t.mean[7] == 0 :
                                 light_tracker_list.append((int(t.tlwh[0]),int(t.tlwh[1]),int(t.tlwh[2]),int(t.tlwh[3])))
                                 light_tracker_id.append(tid)
-                            detection_result[frame_id][t.track_id]=(t.tlwh[0],t.tlwh[1],t.tlwh[2],t.tlwh[3])
+                            if t.class_id == 0:     # person only
+                                print(f"{frame_id},{t.track_id},{t.tlwh[0]},{t.tlwh[1]},{t.tlwh[2]},{t.tlwh[3]},{t.score},-1,-1,-1")
+                                detection_result[frame_id][t.track_id]=(t.tlwh[0],t.tlwh[1],t.tlwh[2],t.tlwh[3])
 
                 #    print(f"light list: {light_tracker_list}")
                     for each in light_tracker_list:
                         light_multi_tracker.add(cv2.TrackerMedianFlow_create(), frame, each)
+                    
+                    cluster_dic, cluster_num = dbscan_clustering(online_targets)
+                    detection_rate = detection_rate_adjuster(cluster_dic, cluster_num)
 
                  #   print("=======plot track=================")
                     online_im = plot_tracking(
@@ -176,7 +197,7 @@ def frame_sampler(source, path, predictor, vis_folder, args):
                 if len(predicted_bbox) != 0:
                     
                     predict_bbox = []
-                    if frame_id % 10 == 3:
+                    if frame_id <= 1: # update three frames with light tracker to get the kalman filter upd
                         light_track_ok, light_track_bbox = light_multi_tracker.update(frame)
                     else:
                         light_track_ok = False
@@ -186,32 +207,32 @@ def frame_sampler(source, path, predictor, vis_folder, args):
                       #  print(f"track_id: {each_track.track_id}  mean: {each_track.mean}")
                         
                         # check if the bbox is in the light_tracker_list -> new track or reinitiated track 
-                        if light_track_ok and each_track.first_seen:
+                        if light_track_ok and each_track.track_id in light_tracker_id:
                             light_id = light_tracker_id.index(each_track.track_id)
                             new_bbox = light_track_bbox[light_id]
-                            each_track.first_seen = False
-                            each_track.kalman_adjust = True
-                            color_dist = pixel_distribution(frame, int(new_bbox[0]), int(new_bbox[1]), int(new_bbox[2]), int(new_bbox[3]))
-                            each_track.dist_threshold = cv2.compareHist(each_track.color_dist, color_dist, cv2.HISTCMP_CORREL)
+                            #each_track.first_seen = False
+                            #each_track.kalman_adjust = True
+                            #color_dist = pixel_distribution(frame, int(new_bbox[0]), int(new_bbox[1]), int(new_bbox[2]), int(new_bbox[3]))
+                          #  each_track.dist_threshold = cv2.compareHist(each_track.color_dist, color_dist, cv2.HISTCMP_CORREL)
                             # need to convert from tlwh to tlbr
                             predict_bbox.append([new_bbox[0], new_bbox[1], new_bbox[2]+new_bbox[0], new_bbox[3]+new_bbox[1], predicted_bbox[idx][4], predicted_bbox[idx][5]])
                         
-                        elif each_track.kalman_adjust and each_track.kalman_adjust_period != 0:
-                            tmp_traject_bbox = []
-                            tmp_threshold = []
-                            tmp_color_dist = []
-                            for count in range(5):
-                                tl_x_new, tl_y_new, width, height = trajectory_finder(each_track)
-                                color_dist = pixel_distribution(frame, tl_x_new, tl_y_new, width, height)
-                                tmp_thresh = cv2.compareHist(each_track.color_dist, color_dist, cv2.HISTCMP_CORREL)
-                                tmp_traject_bbox.append([tl_x_new, tl_y_new, width, height])
-                                tmp_threshold.append(tmp_thresh)
-                            tmp_index = tmp_threshold.index(max(tmp_threshold))
-                            tmp_bbox = tmp_traject_bbox[tmp_index]
-                            each_track.kalman_adjust_period -= 1
-                            if each_track.kalman_adjust_period == 0:
-                                each_track.kalman_adjust = False
-                            predict_bbox.append([tmp_bbox[0], tmp_bbox[1], tmp_bbox[2]+tmp_bbox[0], tmp_bbox[3]+tmp_bbox[1], predicted_bbox[idx][4], predicted_bbox[idx][5]])
+                        # elif each_track.kalman_adjust and each_track.kalman_adjust_period != 0:
+                        #     tmp_traject_bbox = []
+                        #     tmp_threshold = []
+                        #     tmp_color_dist = []
+                        #     for count in range(5):
+                        #         tl_x_new, tl_y_new, width, height = trajectory_finder(each_track)
+                        #         color_dist = pixel_distribution(frame, tl_x_new, tl_y_new, width, height)
+                        #         tmp_thresh = cv2.compareHist(each_track.color_dist, color_dist, cv2.HISTCMP_CORREL)
+                        #         tmp_traject_bbox.append([tl_x_new, tl_y_new, width, height])
+                        #         tmp_threshold.append(tmp_thresh)
+                        #     tmp_index = tmp_threshold.index(max(tmp_threshold))
+                        #     tmp_bbox = tmp_traject_bbox[tmp_index]
+                        #     each_track.kalman_adjust_period -= 1
+                        #     if each_track.kalman_adjust_period == 0:
+                        #         each_track.kalman_adjust = False
+                        #     predict_bbox.append([tmp_bbox[0], tmp_bbox[1], tmp_bbox[2]+tmp_bbox[0], tmp_bbox[3]+tmp_bbox[1], predicted_bbox[idx][4], predicted_bbox[idx][5]])
                         else:
                             new_x = each_track.mean[0]+each_track.mean[4]
                             new_y = each_track.mean[1]+each_track.mean[5]
@@ -232,7 +253,9 @@ def frame_sampler(source, path, predictor, vis_folder, args):
 
                     # using the predicted bbox as the new detection result and feed into the tracker update
                     tk_update = time.time()
-                    online_targets = tracker.new_update(predicted_bbox, [img_info['height'], img_info['width']], exp.test_size)
+                    online_targets = tracker.new_update(predicted_bbox, [img_info['height'], img_info['width'], img_info['raw_img']], exp.test_size)
+                    cluster_dic, cluster_num = dbscan_clustering(online_targets)
+                    detection_rate = detection_rate_adjuster(cluster_dic, cluster_num)
                  #   print(f"tk_update: {(time.time()-tk_update)*1000}")
                     online_tlwhs = []
                     online_ids = []
@@ -254,12 +277,13 @@ def frame_sampler(source, path, predictor, vis_folder, args):
                             online_ids.append(tid)
                             online_scores.append(t.score)
                             online_class_id.append(t.class_id)
-                            detection_result[frame_id][t.track_id]=(t.tlwh[0],t.tlwh[1],t.tlwh[2],t.tlwh[3])
+                            if t.class_id == 0:     # person only
+                                detection_result[frame_id][t.track_id]=(t.tlwh[0],t.tlwh[1],t.tlwh[2],t.tlwh[3])
+                                print(f"{frame_id},{t.track_id},{t.tlwh[0]},{t.tlwh[1]},{t.tlwh[2]},{t.tlwh[3]},{t.score},-1,-1,-1")
 
                     online_im = plot_tracking(
                         image=img_info['raw_img'], tlwhs=online_tlwhs, obj_ids=online_ids, online_class_id=online_class_id, frame_id=frame_id + 1, fps=fps, scores=online_scores, class_names = cls_names
                     )
-                  #  print(f"track time: {(time.time()-track_start)*1000}")
                 else:
                     online_im = img_info['raw_img']
             
@@ -267,7 +291,7 @@ def frame_sampler(source, path, predictor, vis_folder, args):
 
             if args.save_result:
                 vid_writer.write(online_im)
-                cv2.imwrite(f'/data/xiang/video_collab/para_det_trk/imgs/{frame_id}.png', online_im)
+                cv2.imwrite(f'/data/Video_Colab/imgs/{frame_id}.png', online_im)
                 pass
             else:
                 cv2.namedWindow("yolox", cv2.WINDOW_NORMAL)
@@ -278,8 +302,8 @@ def frame_sampler(source, path, predictor, vis_folder, args):
         else:
             break
     video_end = time.time()
-    print(f"video processing time is {video_end - video_start}")
-    with open("traffic_2.json",'w') as fp:
+   # print(f"video processing time is {video_end - video_start}")
+    with open(f"{args.path.split('.')[0]}_result.json",'w') as fp:
         json.dump(detection_result,fp)  
     cap.release()
     cv2.destroyAllWindows()
@@ -290,10 +314,11 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     # detection arg
     parser.add_argument('-s',"--source", type=str, default="video", help="video or webcam")
+    parser.add_argument('-trt',"--trt", type=str, default=None, help="video or webcam")
     parser.add_argument('-p', "--path", type=str, default=None, help="choose a video")
     parser.add_argument("-m", "--model", type=str, default=None, help="model name")
     parser.add_argument("-c", "--ckpt", default=None, type=str, help="ckpt for eval")
-    parser.add_argument("--conf", default=0.3, type=float, help="test conf")
+    parser.add_argument("--conf", default=0.4, type=float, help="test conf")
     parser.add_argument("--nms", default=0.3, type=float, help="test nms threshold")
     parser.add_argument("--tsize", default=None, type=int, help="test img size")
     parser.add_argument("--save_result", action="store_true", help="whether to save the inference result of image/video")
@@ -308,8 +333,13 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
 
-    file_name = os.path.join(args.source, args.model)
+    if args.trt != None:
+        file_name = os.path.join(args.source, args.trt.split('.')[0])
+    else:
+        file_name = os.path.join(args.source, args.model)
+    
     vis_folder = None
+
     if args.save_result:
         vis_folder = os.path.join(file_name, "vis_res")
         os.makedirs(vis_folder, exist_ok=True)
@@ -323,45 +353,71 @@ if __name__ == '__main__':
         "yolox_l":(1.0, 1.0),
         "yolox_x":(1.33, 1.25)
     }
-    if "yolox" in args.model:
-        model_depth, model_width = yolox_dic[args.model]
-    exp = EXP(model_depth, model_width)
+    if args.trt == None:
+        if "yolox" in args.model:
+            model_depth, model_width = yolox_dic[args.model]
+        exp = EXP(model_depth, model_width)
 
-    vis_folder = None
-    if args.save_result:
-        vis_folder = os.path.join(file_name, "vis_res")
-        os.makedirs(vis_folder, exist_ok=True)
+        vis_folder = None
+        if args.save_result:
+            vis_folder = os.path.join(file_name, "vis_res")
+            os.makedirs(vis_folder, exist_ok=True)
 
-    logger.info("Args: {}".format(args))
+        logger.info("Args: {}".format(args))
 
-    if args.conf is not None:
-        exp.test_conf = args.conf
-    if args.nms is not None:
-        exp.nmsthre = args.nms
-    if args.tsize is not None:
-        exp.test_size = (args.tsize, args.tsize)
+        if args.conf is not None:
+            exp.test_conf = args.conf
+        if args.nms is not None:
+            exp.nmsthre = args.nms
+        if args.tsize is not None:
+            exp.test_size = (args.tsize, args.tsize)
+    else:
+        exp = EXP(None, None)
+
+
+    if args.trt != None:
+        model = None
+        engine, context = build_engine(args.trt)
+
+        for binding in engine:
+            if engine.binding_is_input(binding):  # we expect only one input
+                input_shape = engine.get_binding_shape(binding)
+                input_size = trt.volume(input_shape) * engine.max_batch_size * np.dtype(np.float32).itemsize  # in bytes
+                device_input = cuda.mem_alloc(input_size)
+            else:  # and one output
+                output_shape = engine.get_binding_shape(binding)
+                # create page-locked memory buffers (i.e. won't be swapped to disk)
+                host_output = cuda.pagelocked_empty(trt.volume(output_shape) * engine.max_batch_size, dtype=np.float32)
+                device_output = cuda.mem_alloc(host_output.nbytes)
+        # Create a stream in which to copy inputs/outputs and run inference.
+        stream = cuda.Stream()
+        
+        trt_engine = (device_input, device_output, host_output, stream, context, engine)
+
+    else:
+        model = exp.get_model()
     
-    model = exp.get_model()
-    
-    logger.info("Model Summary: {}".format(get_model_info(model, exp.test_size)))
+        logger.info("Model Summary: {}".format(get_model_info(model, exp.test_size)))
+
+        if torch.cuda.is_available():
+            model.cuda()
+            if args.fp16:
+                model.half()  # to FP16
+        model.eval()
+
+        logger.info("loading checkpoint")
+        ckpt = torch.load(args.ckpt, map_location="cpu")
+        # load the model state dict
+        model.load_state_dict(ckpt["model"])
+        logger.info("loaded checkpoint done.")
+        trt_engine = (None, None, None, None, None, None)
     
     if torch.cuda.is_available():
         device = "gpu"
     else:
         device = "cpu"
 
-    if torch.cuda.is_available():
-        model.cuda()
-        if args.fp16:
-            model.half()  # to FP16
-    model.eval()
 
-    logger.info("loading checkpoint")
-    ckpt = torch.load(args.ckpt, map_location="cpu")
-    # load the model state dict
-    model.load_state_dict(ckpt["model"])
-    logger.info("loaded checkpoint done.")
-
-    predictor = Predictor(model, exp, COCO_CLASSES, device, args.fp16, args.legacy)
+    predictor = Predictor(args, model, exp, trt_engine, COCO_CLASSES, device, args.fp16, args.legacy)
 
     frame_sampler(args.source, args.path, predictor, vis_folder, args)
