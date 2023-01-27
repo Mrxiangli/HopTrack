@@ -24,23 +24,6 @@ import pycuda.autoinit
 import pycuda.driver as cuda
 
 
-################################################
-#
-# A trial run on the model to calculate the mainline inference latency
-# and use the mainline latency to determine \tau
-#
-################################################
-def trial_run(engine, frame, fps, exp):
-    for i in range(5):
-        outputs, img_info = inference(engine, frame, exp)
-    start = time.time()
-    outputs, img_info = inference(engine, frame, exp)
-    end = time.time()
-    num_track = math.ceil((end-start)/(1/fps))
-    print("system preheat")
-    return num_track
-
-
 # logger to capture errors, warnings, and other information during the build and inference phases
 TRT_LOGGER = trt.Logger()
 
@@ -50,12 +33,12 @@ def build_engine(onnx_file_path):
     builder = trt.Builder(TRT_LOGGER)
     # explicit_batch = 1 << int(trt.NetworkDefinitionCreationFlag.EXPLICIT_BATCH)
     network = builder.create_network(1)
-    parser = trt.OnnxParser(network, TRT_LOGGER)
+    parser_onnx = trt.OnnxParser(network, TRT_LOGGER)
 
     # parse ONNX
     with open(onnx_file_path, 'rb') as model:
         print('Beginning ONNX file parsing')
-        parser.parse(model.read())
+        parser_onnx.parse(model.read())
     print('Completed parsing of ONNX file')
 
     config = builder.create_builder_config()
@@ -70,18 +53,22 @@ def build_engine(onnx_file_path):
 
         # generate TensorRT engine optimized for the target platform
         print('Building an engine...')
-        print("num layers:", network.num_layers)
-        # network.mark_output(network.get_layer(network.num_layers - 1).get_output(0))
-        engine = builder.build_engine(network, config)
-        context = engine.create_execution_context()
+        print("Num layers:", network.num_layers)
+        trt_engine = builder.build_engine(network, config)
+        trt_context = engine.create_execution_context()
         print("Completed creating Engine")
 
-        return engine, context
+        return trt_engine, trt_context
+
+    assert False
 
 
-def inference(engine, img, exp):
+def trt_inference(engine, img, exp):
 
     # get sizes of input and output and allocate memory required for input data and for output data
+    device_input = None
+    host_output = None
+    device_output = None
     for binding in engine:
         if engine.binding_is_input(binding):  # we expect only one input
             input_shape = engine.get_binding_shape(binding)
@@ -104,7 +91,7 @@ def inference(engine, img, exp):
         img_info["file_name"] = os.path.basename(img)
         img = cv2.imread(img)
     else:
-        img_info["file_name"] = None
+        img_info["file_name"] = ''
 
     height, width = img.shape[:2]
     img_info["height"] = height
@@ -120,7 +107,9 @@ def inference(engine, img, exp):
     host_input = np.array(img.contiguous(), dtype=np.float32, order='C')
 
     # preprocess input data
-    # host_input = np.array(torch.tensor(cv2.resize(cv2.imread('000032.jpg'), (640, 640), interpolation = cv2.INTER_AREA)).unsqueeze(0).contiguous(), dtype=np.float32, order='C')
+    # host_input = np.array(torch.tensor(
+    #     cv2.resize(cv2.imread('000032.jpg'), (640, 640), interpolation=cv2.INTER_AREA)).unsqueeze(0).contiguous(),
+    #                       dtype=np.float32, order='C')
     # print(host_input.shape)
     cuda.memcpy_htod_async(device_input, host_input, stream)
 
@@ -152,10 +141,12 @@ def inference(engine, img, exp):
 # the frames at a customized rate or the video's original fps.
 #
 ################################################
-def frame_sampler(source, path, engine, vis_folder, args, exp):
+def frame_sampler(source, path, predictor, vis_folder, args, exp):
 
     # Used for MOTA/MOTP etc.
     detection_results = defaultdict(dict)
+
+    vid_writer = None
 
     cls_names = COCO_CLASSES
 
@@ -186,13 +177,13 @@ def frame_sampler(source, path, engine, vis_folder, args, exp):
     while not ret:
         ret, frame = cap.read()
 
-    num_track = trial_run(engine, frame, fps, exp)
     tracker = BYTETracker(args, frame_rate=math.ceil(fps))
     
     frame_id = 0
-    results = []
     img_info = {}
     online_targets = []
+    light_track_id = []
+    multiTracker = None
     video_start = time.time()
 
     while True:
@@ -204,12 +195,15 @@ def frame_sampler(source, path, engine, vis_folder, args, exp):
             img_info["width"] = width
             img_info["raw_img"] = frame
 
-            if frame_id % 10 == 0:
+            if frame_id % 20 == 0:
                 light_track_id = []
                 multiTracker = cv2.MultiTracker_create()
 
                 # print(f"  ====================================Inference======================================")
-                outputs, img_info = inference(engine, frame, exp)
+                if args.trt:
+                    outputs, img_info = trt_inference(engine, frame, exp)
+                else:
+                    outputs, img_info = predictor.inference(frame)
                 # print(f"detection result:\n\t{outputs}")
                 # the mean in the kalman filter object has all 8 states,
                 # potentially expose that to the following interface and do prediction.
@@ -231,12 +225,12 @@ def frame_sampler(source, path, engine, vis_folder, args, exp):
                             online_scores.append(t.score)
                             online_class_id.append(t.class_id)
                             detection_results[frame_id][t.track_id] = list(t.tlwh)
-                    # print("==============plot track=================")
-                    # online_im = plot_tracking(
-                    #     image=img_info['raw_img'], tlwhs=online_tlwhs, obj_ids=online_ids,
-                    #     online_class_id=online_class_id, frame_id=frame_id + 1,
-                    #     fps=fps, scores=online_scores, class_names=cls_names
-                    # )
+                    print("==============plot track=================")
+                    online_im = plot_tracking(
+                        image=img_info['raw_img'], tlwhs=online_tlwhs, obj_ids=online_ids,
+                        online_class_id=online_class_id, frame_id=frame_id + 1,
+                        fps=fps, scores=online_scores, class_names=cls_names
+                    )
                 else:
                     online_im = img_info['raw_img']
                 # print(f"========================================================================================================")
@@ -273,21 +267,21 @@ def frame_sampler(source, path, engine, vis_folder, args, exp):
                         online_scores.append(t.score)
                         online_class_id.append(t.class_id)
                         detection_results[frame_id][t.track_id] = list(t.tlwh)
-                # online_im = plot_tracking(
-                #     image=img_info['raw_img'], tlwhs=online_tlwhs, obj_ids=online_ids, online_class_id=online_class_id,
-                #     frame_id=frame_id + 1, fps=fps, scores=online_scores, class_names=cls_names
-                # )
+                online_im = plot_tracking(
+                    image=img_info['raw_img'], tlwhs=online_tlwhs, obj_ids=online_ids, online_class_id=online_class_id,
+                    frame_id=frame_id + 1, fps=fps, scores=online_scores, class_names=cls_names
+                )
 
             frame_id += 1
 
             # if frame_id == 900:
             #     break
 
-            # if args.save_result:
-            #     vid_writer.write(online_im)
-            # else:
-            #     cv2.namedWindow("yolox", cv2.WINDOW_NORMAL)
-            #     cv2.imshow("yolox", online_im)
+            if args.save_result:
+                vid_writer.write(online_im)
+            else:
+                cv2.namedWindow("yolox", cv2.WINDOW_NORMAL)
+                cv2.imshow("yolox", online_im)
             ch = cv2.waitKey(1)
             if ch == 27 or ch == ord("q") or ch == ord("Q"):
                 break
@@ -322,6 +316,8 @@ if __name__ == '__main__':
                         help="Adopting mix precision evaluating.")
     parser.add_argument("--legacy", dest="legacy", default=False, action="store_true",
                         help="To be compatible with older versions")
+    parser.add_argument("--trt", action="store_true",
+                        help="Whether use TensorRT acceleration")
     # tracking arg
     parser.add_argument("--track_thresh", type=float, default=0.5, help="tracking confidence threshold")
     parser.add_argument("--track_buffer", type=int, default=30, help="the frames for keep lost tracks")
@@ -365,12 +361,35 @@ if __name__ == '__main__':
     if args.tsize is not None:
         exp.test_size = (args.tsize, args.tsize)
 
-    ONNX_FILE_PATH = args.model + '.onnx'
+    if args.trt:
+        ONNX_FILE_PATH = 'weights/' + args.model + '.onnx'
 
-    # initialize TensorRT engine and parse ONNX model
-    engine, context = build_engine(ONNX_FILE_PATH)
+        # initialize TensorRT engine and parse ONNX model
+        engine, context = build_engine(ONNX_FILE_PATH)
 
-    frame_sampler(args.source, args.path, engine, vis_folder, args, exp)
+        frame_sampler(args.source, args.path, engine, vis_folder, args, exp)
+    else:
 
-    # context.destroy()
-    # engine.destroy()
+        model = exp.get_model()
+        logger.info("Model Summary: {}".format(get_model_info(model, exp.test_size)))
+
+        if torch.cuda.is_available():
+            model.cuda()
+            if args.fp16:
+                model.half()  # to FP16
+        model.eval()
+
+        logger.info("loading checkpoint")
+        ckpt = torch.load(args.ckpt, map_location="cpu")
+        # load the model state dict
+        model.load_state_dict(ckpt["model"])
+        logger.info("loaded checkpoint done.")
+
+        if torch.cuda.is_available():
+            device = "gpu"
+        else:
+            device = "cpu"
+
+        predictor = Predictor(model, exp, COCO_CLASSES, device, args.fp16, args.legacy)
+
+        frame_sampler(args.source, args.path, predictor, vis_folder, args, exp)

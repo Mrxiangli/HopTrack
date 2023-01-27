@@ -5,4 +5,5 @@ __pycache__/*
 *.jpg
 *.onnx
 *.pyc
+*.tar
 .DS_Store
