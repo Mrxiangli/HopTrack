@@ -14,7 +14,7 @@ import pycuda.autoinit
 import warnings
 
 
-sys.path.insert(0, '/data/xiang/video_collab/para_det_trk')
+sys.path.insert(0, '/home/dcsl/Documents/Video_Colab')
 
 import cv2
 import torch
@@ -59,9 +59,9 @@ def dbscan_clustering(online_targets):
 
 def detection_rate_adjuster(cluster_dic, cluster_num):
     if cluster_num > 0 :
-        detection_rate = 5
-    else:
         detection_rate = 10
+    else:
+        detection_rate = 15
     return detection_rate
     
 
@@ -89,7 +89,6 @@ def frame_sampler(source, path, predictor, vis_folder, args):
     width = cap.get(cv2.CAP_PROP_FRAME_WIDTH) 
     height = cap.get(cv2.CAP_PROP_FRAME_HEIGHT) 
     fps = cap.get(cv2.CAP_PROP_FPS)
-  #  print(f"current frame rate: {fps} fps")
 
     if args.save_result:
         save_folder = os.path.join(vis_folder, time.strftime("%Y_%m_%d_%H_%M_%S", time.localtime()))
@@ -104,21 +103,19 @@ def frame_sampler(source, path, predictor, vis_folder, args):
         vid_writer = cv2.VideoWriter(save_path, cv2.VideoWriter_fourcc(*"mp4v"), fps, (int(width), int(height)))
         
 
-
-
    # ret_val, frame = cap.read()
    # num_track = trail_run(predictor, frame, fps)               #uncomment this when testing latency
     tracker = BYTETracker(args, frame_rate=math.ceil(fps))
     light_multi_tracker = cv2.MultiTracker_create()
     detection_result = {}
     
-    frame_id = 0
+    frame_id = 1
     results = []
     video_start = time.time()
     img_info = {}
     img_info["height"] = height
     img_info["width"] = width
-    detection_rate = 1
+    detection_rate = 15
     while True:
         ret_val, frame = cap.read()
         if ret_val:
@@ -130,7 +127,7 @@ def frame_sampler(source, path, predictor, vis_folder, args):
             
             img_info["raw_img"] = frame
 
-            if frame_id % detection_rate == 0:
+            if frame_id % detection_rate == 1:
                 det_start = time.time()
                 light_multi_tracker.clear()
                 light_multi_tracker = cv2.MultiTracker_create()
@@ -179,7 +176,6 @@ def frame_sampler(source, path, predictor, vis_folder, args):
                     cluster_dic, cluster_num = dbscan_clustering(online_targets)
                     detection_rate = detection_rate_adjuster(cluster_dic, cluster_num)
 
-                 #   print("=======plot track=================")
                     online_im = plot_tracking(
                         image=img_info['raw_img'], tlwhs=online_tlwhs, obj_ids=online_ids, online_class_id=online_class_id, frame_id=frame_id + 1, fps=fps, scores=online_scores, class_names = cls_names
                     )
@@ -190,6 +186,8 @@ def frame_sampler(source, path, predictor, vis_folder, args):
 
 
             else:
+
+                track_start = time.time()
                 # for mota purpose
                 if frame_id not in detection_result.keys():
                     detection_result[frame_id]={}
@@ -204,35 +202,12 @@ def frame_sampler(source, path, predictor, vis_folder, args):
 
                     tk_start = time.time()
                     for idx, each_track in enumerate(online_targets):
-                      #  print(f"track_id: {each_track.track_id}  mean: {each_track.mean}")
                         
                         # check if the bbox is in the light_tracker_list -> new track or reinitiated track 
                         if light_track_ok and each_track.track_id in light_tracker_id:
                             light_id = light_tracker_id.index(each_track.track_id)
                             new_bbox = light_track_bbox[light_id]
-                            #each_track.first_seen = False
-                            #each_track.kalman_adjust = True
-                            #color_dist = pixel_distribution(frame, int(new_bbox[0]), int(new_bbox[1]), int(new_bbox[2]), int(new_bbox[3]))
-                          #  each_track.dist_threshold = cv2.compareHist(each_track.color_dist, color_dist, cv2.HISTCMP_CORREL)
-                            # need to convert from tlwh to tlbr
                             predict_bbox.append([new_bbox[0], new_bbox[1], new_bbox[2]+new_bbox[0], new_bbox[3]+new_bbox[1], predicted_bbox[idx][4], predicted_bbox[idx][5]])
-                        
-                        # elif each_track.kalman_adjust and each_track.kalman_adjust_period != 0:
-                        #     tmp_traject_bbox = []
-                        #     tmp_threshold = []
-                        #     tmp_color_dist = []
-                        #     for count in range(5):
-                        #         tl_x_new, tl_y_new, width, height = trajectory_finder(each_track)
-                        #         color_dist = pixel_distribution(frame, tl_x_new, tl_y_new, width, height)
-                        #         tmp_thresh = cv2.compareHist(each_track.color_dist, color_dist, cv2.HISTCMP_CORREL)
-                        #         tmp_traject_bbox.append([tl_x_new, tl_y_new, width, height])
-                        #         tmp_threshold.append(tmp_thresh)
-                        #     tmp_index = tmp_threshold.index(max(tmp_threshold))
-                        #     tmp_bbox = tmp_traject_bbox[tmp_index]
-                        #     each_track.kalman_adjust_period -= 1
-                        #     if each_track.kalman_adjust_period == 0:
-                        #         each_track.kalman_adjust = False
-                        #     predict_bbox.append([tmp_bbox[0], tmp_bbox[1], tmp_bbox[2]+tmp_bbox[0], tmp_bbox[3]+tmp_bbox[1], predicted_bbox[idx][4], predicted_bbox[idx][5]])
                         else:
                             new_x = each_track.mean[0]+each_track.mean[4]
                             new_y = each_track.mean[1]+each_track.mean[5]
@@ -245,8 +220,7 @@ def frame_sampler(source, path, predictor, vis_folder, args):
                             tlbr = np.asarray(tlwh).copy()
                             tlbr[2:] += tlbr[:2]
                             tlbr=np.append(tlbr,[predicted_bbox[idx][4], predicted_bbox[idx][5]])
-                            predict_bbox.append(tlbr)
-                 #   print(f"tk_time: {(time.time() - tk_start)*1000}")      
+                            predict_bbox.append(tlbr)   
 
                     predicted_bbox = torch.tensor(np.array(predict_bbox), dtype=torch.float32)
 
@@ -254,9 +228,10 @@ def frame_sampler(source, path, predictor, vis_folder, args):
                     # using the predicted bbox as the new detection result and feed into the tracker update
                     tk_update = time.time()
                     online_targets = tracker.new_update(predicted_bbox, [img_info['height'], img_info['width'], img_info['raw_img']], exp.test_size)
-                    cluster_dic, cluster_num = dbscan_clustering(online_targets)
-                    detection_rate = detection_rate_adjuster(cluster_dic, cluster_num)
-                 #   print(f"tk_update: {(time.time()-tk_update)*1000}")
+                    # the following dynamic sampling might be enabled 
+                    #cluster_dic, cluster_num = dbscan_clustering(online_targets)
+                    #detection_rate = detection_rate_adjuster(cluster_dic, cluster_num)
+
                     online_tlwhs = []
                     online_ids = []
                     online_scores = []
@@ -284,6 +259,7 @@ def frame_sampler(source, path, predictor, vis_folder, args):
                     online_im = plot_tracking(
                         image=img_info['raw_img'], tlwhs=online_tlwhs, obj_ids=online_ids, online_class_id=online_class_id, frame_id=frame_id + 1, fps=fps, scores=online_scores, class_names = cls_names
                     )
+                    #print(f"track time: {(time.time()-track_start)*1000}")
                 else:
                     online_im = img_info['raw_img']
             
@@ -291,7 +267,7 @@ def frame_sampler(source, path, predictor, vis_folder, args):
 
             if args.save_result:
                 vid_writer.write(online_im)
-                cv2.imwrite(f'/data/Video_Colab/imgs/{frame_id}.png', online_im)
+               # cv2.imwrite(f'/home/dcsl/Documents/Video_Colab/imgs/{frame_id}.png', online_im)
                 pass
             else:
                 cv2.namedWindow("yolox", cv2.WINDOW_NORMAL)
@@ -318,16 +294,18 @@ if __name__ == '__main__':
     parser.add_argument('-p', "--path", type=str, default=None, help="choose a video")
     parser.add_argument("-m", "--model", type=str, default=None, help="model name")
     parser.add_argument("-c", "--ckpt", default=None, type=str, help="ckpt for eval")
-    parser.add_argument("--conf", default=0.4, type=float, help="test conf")
+    parser.add_argument("--conf", default=0.2, type=float, help="test conf")
     parser.add_argument("--nms", default=0.3, type=float, help="test nms threshold")
     parser.add_argument("--tsize", default=None, type=int, help="test img size")
     parser.add_argument("--save_result", action="store_true", help="whether to save the inference result of image/video")
     parser.add_argument("--fp16", dest="fp16", default=False, action="store_true", help="Adopting mix precision evaluating.")
     parser.add_argument("--legacy", dest="legacy", default=False, action="store_true", help="To be compatible with older versions")
+    parser.add_argument("--fuse",dest="fuse",default=False,action="store_true",help="Fuse conv and bn for testing.")
+    parser.add_argument("--mot",dest="mot",default=False,action="store_true",help="Fuse conv and bn for testing.")
     # tracking arg
-    parser.add_argument("--track_thresh", type=float, default=0.5, help="tracking confidence threshold")
+    parser.add_argument("--track_thresh", type=float, default=0.3, help="tracking confidence threshold")
     parser.add_argument("--track_buffer", type=int, default=30, help="the frames for keep lost tracks")
-    parser.add_argument("--match_thresh", type=float, default=0.8, help="matching threshold for tracking")
+    parser.add_argument("--match_thresh", type=float, default=0.7, help="matching threshold for tracking")
     parser.add_argument("--aspect_ratio_thresh", type=float, default=1.6, help="threshold for filtering out boxes of which aspect ratio are above the given value.")
     parser.add_argument('--min_box_area', type=float, default=4, help='filter out tiny boxes')
 
@@ -345,35 +323,42 @@ if __name__ == '__main__':
         os.makedirs(vis_folder, exist_ok=True)
 
     # create a experiment object
-    yolox_dic={
-        "yolox_nano":(0.33, 0.25),
-        "yolox_tiny":(0.33, 0.375),
-        "yolox_s":(0.33, 0.5),
-        "yolox_m":(0.67, 0.75),
-        "yolox_l":(1.0, 1.0),
-        "yolox_x":(1.33, 1.25)
-    }
-    if args.trt == None:
+    if args.model.split("_")[0] == "yolox":
+        yolox_dic={
+            "yolox_nano":(0.33, 0.25),
+            "yolox_tiny":(0.33, 0.375),
+            "yolox_s":(0.33, 0.5),
+            "yolox_m":(0.67, 0.75),
+            "yolox_l":(1.0, 1.0),
+            "yolox_x":(1.33, 1.25)
+        }
         if "yolox" in args.model:
             model_depth, model_width = yolox_dic[args.model]
-        exp = EXP(model_depth, model_width)
+            if args.trt == None:
+                exp = EXP(model_depth, model_width, args)
+            else:
+                exp = EXP(None, None, args)
 
-        vis_folder = None
-        if args.save_result:
-            vis_folder = os.path.join(file_name, "vis_res")
-            os.makedirs(vis_folder, exist_ok=True)
+    if args.model == "yolov5":
+        model_depth, model_width = None, None
+        exp = EXP(model_depth, model_width, args)
+    
+    if args.model == "mobilenet":
+        pass
 
-        logger.info("Args: {}".format(args))
+    vis_folder = None
+    if args.save_result:
+        vis_folder = os.path.join(file_name, "vis_res")
+        os.makedirs(vis_folder, exist_ok=True)
 
-        if args.conf is not None:
-            exp.test_conf = args.conf
-        if args.nms is not None:
-            exp.nmsthre = args.nms
-        if args.tsize is not None:
-            exp.test_size = (args.tsize, args.tsize)
-    else:
-        exp = EXP(None, None)
+    logger.info("Args: {}".format(args))
 
+    if args.conf is not None:
+        exp.test_conf = args.conf
+    if args.nms is not None:
+        exp.nmsthre = args.nms
+    if args.tsize is not None:
+        exp.test_size = args.tsize
 
     if args.trt != None:
         model = None
@@ -396,20 +381,23 @@ if __name__ == '__main__':
 
     else:
         model = exp.get_model()
-    
-        logger.info("Model Summary: {}".format(get_model_info(model, exp.test_size)))
-
-        if torch.cuda.is_available():
-            model.cuda()
-            if args.fp16:
-                model.half()  # to FP16
         model.eval()
 
-        logger.info("loading checkpoint")
-        ckpt = torch.load(args.ckpt, map_location="cpu")
-        # load the model state dict
-        model.load_state_dict(ckpt["model"])
-        logger.info("loaded checkpoint done.")
+        logger.info("Model Summary: {}".format(get_model_info(model, exp.test_size)))
+
+        # if torch.cuda.is_available():
+        #     model.cuda()
+        #     if args.fp16:
+        #         model.half()  # to FP16
+
+        if "yolox" in args.model:
+            logger.info("loading checkpoint")
+            ckpt = torch.load(args.ckpt, map_location="cpu")
+            # load the model state dict
+            model.load_state_dict(ckpt["model"])
+            logger.info("loaded checkpoint done.")
+            if args.fuse:
+                model = fuse_model(model)
         trt_engine = (None, None, None, None, None, None)
     
     if torch.cuda.is_available():

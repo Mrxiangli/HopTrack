@@ -174,7 +174,7 @@ class BYTETracker(object):
         self.frame_id = 0
         self.args = args
         #self.det_thresh = args.track_thresh
-        self.det_thresh = args.track_thresh + 0.1
+       # self.det_thresh = args.track_thresh + 0.1
         self.buffer_size = int(frame_rate / 30.0 * args.track_buffer)
         self.max_time_lost = self.buffer_size
         self.kalman_filter = KalmanFilter()
@@ -187,6 +187,7 @@ class BYTETracker(object):
         removed_stracks = []
 
         if output_results.shape[1] == 6:
+            output_results = output_results.cpu().numpy()
             scores = output_results[:, 4]
             bboxes = output_results[:, :4]
             cls_name = output_results[:,5]
@@ -198,11 +199,12 @@ class BYTETracker(object):
 
         img_h, img_w, frame = img_info[0], img_info[1], img_info[2]
         scale = min(img_size[0] / float(img_h), img_size[1] / float(img_w))
-        bboxes /= scale
+        if "yolox" in self.args.model:
+            bboxes /= scale
 
         # detection with high scores
         remain_inds = scores > self.args.track_thresh
-        inds_low = scores > 0.4
+        inds_low = scores > 0.1
         inds_high = scores < self.args.track_thresh
         
         #detection with low scores
@@ -332,9 +334,9 @@ class BYTETracker(object):
         """ Step 4: Init new stracks"""
         tmp_active=[]
         for inew in u_detection:
-         #   print("creating new trackssssssssssssssssss!")
+          #  print("creating new trackssssssssssssssssss!")
             track = detections[inew]
-            if track.score < self.det_thresh:
+            if track.score < 0.35:
                 continue
             track.activate(self.kalman_filter, self.frame_id)
             tmp_active.append(track)
@@ -402,7 +404,7 @@ class BYTETracker(object):
         self.lost_stracks = sub_stracks(self.lost_stracks, self.removed_stracks)
         self.removed_stracks.extend(removed_stracks)
         self.tracked_stracks, self.lost_stracks = remove_duplicate_stracks(self.tracked_stracks, self.lost_stracks)
-        output_stracks = [track for track in self.tracked_stracks if track.is_activated]
+        output_stracks = [track for track in self.tracked_stracks if (track.is_activated and (track.class_id == 0 or track.class_id == 1 or track.class_id == 2))]
         
         return output_stracks
 
@@ -427,7 +429,7 @@ class BYTETracker(object):
 
 
         inds_low = scores < self.args.track_thresh
-        inds_high = scores >= self.args.track_thresh
+        inds_high = scores >= 0.3 #self.args.track_thresh
         
         #detection with high scores
         dets = bboxes[inds_high]
@@ -476,42 +478,18 @@ class BYTETracker(object):
                 track.re_activate(det, self.frame_id, new_id=False)
                 refind_stracks.append(track)
 
-        ''' Step 3: Second association, with low score detection boxes'''
-        # association the untrack to the low score detections
-        if len(dets_second) > 0:
-            '''Detections'''
-            detections_second = [STrack(STrack.tlbr_to_tlwh(tlbr), s, c) for
-                          (tlbr, s, c) in zip(dets_second, scores_second, class_second)]
-        else:
-            detections_second = []
-        # for unmatched tracks from the first association, if the state is Tracked, then put it in r_tracked_stracks
-        r_tracked_stracks = [strack_pool[i] for i in u_track if strack_pool[i].state == TrackState.Tracked]
-
-        dists = matching.iou_distance(r_tracked_stracks, detections_second)
-        matches, u_track, u_detection_second = matching.linear_assignment(dists, thresh=0.5)
-
-        # assocated the lower score detection with the rest of tracks
-        for itracked, idet in matches:
-            track = r_tracked_stracks[itracked]
-            det = detections_second[idet]
-            if track.state == TrackState.Tracked:
-                track.update(det, self.frame_id)
-                activated_stracks.append(track)
-            else:
-                track.re_activate(det, self.frame_id, new_id=False)
-                refind_stracks.append(track) 
-
-        #since this tracking is based on the kalman filter prediction without new detections, every track should be matched with one of the predicted bbox unless occulsion
         detections = [detections[i] for i in u_detection]
-        detections_second = [detections_second[i] for i in u_detection_second]
-        unmatched_detections = detections + detections_second
+        r_tracked_stracks = [strack_pool[i] for i in u_track if strack_pool[i].state == TrackState.Tracked]
+        unmatched_detections = detections# + detections_second
 
         potentially_lost = []
         detection_occulusion = []
-        new_thresh=0.5
-        while len(u_track)>0 and len(unmatched_detections)>0 and new_thresh >= 0:
+        new_thresh=0.1
+        u_track = []
+        u_detectons = []
+        while len(r_tracked_stracks)>0 and len(unmatched_detections)>0 and new_thresh > 0.1:
             new_thresh -= 0.1
-            r_tracked_stracks = [r_tracked_stracks[i] for i in u_track]
+           # r_tracked_stracks = [r_tracked_stracks[i] for i in u_track]
             dists = matching.iou_distance(r_tracked_stracks, unmatched_detections)
             matches, u_track, u_detection = matching.linear_assignment(dists, thresh=new_thresh)
 
@@ -526,8 +504,7 @@ class BYTETracker(object):
                 wass_g = wasserstein_distance(t_hist_g, d_hist_g)
                 wass_r = wasserstein_distance(t_hist_r, d_hist_r)
                 average_wass = (wass_b + wass_g + wass_r)/3
-               # print(average_wass)
-                # if color distribution is similar 
+
                 if average_wass < 0.5:
                     if track.state == TrackState.Tracked:
                         track.update(det, self.frame_id)
@@ -536,23 +513,28 @@ class BYTETracker(object):
                         track.re_activate(det, self.frame_id, new_id=False)
                         refind_stracks.append(track)
                 else:
-                    potentially_lost.append(track)
-                    detection_occulusion.append(det)
-            unmatched_detections = [unmatched_detections[i] for i in u_detection] 
+                    potentially_lost.append(itrack)
+                    detection_occulusion.append(idet)
+            #unmatched_detections = [unmatched_detections[i] for i in u_detection] 
 
 
         lost_stracks = []
         for idx in u_track:
+            print(u_track)
+            print(len(u_track))
+            print(len(r_tracked_stracks))
             track = r_tracked_stracks[idx]
             if not track.state == TrackState.Lost:
                 track.mark_lost()
                 lost_stracks.append(track) 
-
-        # for track in potentially_lost:
-        #     if not track.state == TrackState.Lost:
-        #         track.mark_lost()
-        #         lost_stracks.append(track) 
         
+        for idx in potentially_lost:
+            track = r_tracked_stracks[idx]
+            if not track.state == TrackState.Lost:
+                track.mark_lost()
+                lost_stracks.append(track)
+
+
         """ Step 5: Update state"""
         for track in self.lost_stracks:
             if self.frame_id - track.end_frame > self.max_time_lost:
@@ -568,7 +550,7 @@ class BYTETracker(object):
         self.removed_stracks.extend(removed_stracks)
         self.tracked_stracks, self.lost_stracks = remove_duplicate_stracks(self.tracked_stracks, self.lost_stracks)
       
-        output_stracks = [track for track in self.tracked_stracks if track.is_activated]
+        output_stracks = [track for track in self.tracked_stracks if (track.is_activated and (track.class_id == 0 or track.class_id == 1 or track.class_id == 2))]
 
         return output_stracks
 
