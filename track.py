@@ -14,7 +14,7 @@ import pycuda.autoinit
 import warnings
 
 
-sys.path.insert(0, '/home/dcsl/Documents/Video_Colab')
+sys.path.insert(0, '/data/Video_Colab')
 
 import cv2
 import torch
@@ -59,9 +59,9 @@ def dbscan_clustering(online_targets):
 
 def detection_rate_adjuster(cluster_dic, cluster_num):
     if cluster_num > 0 :
-        detection_rate = 10
+        detection_rate = 5
     else:
-        detection_rate = 15
+        detection_rate = 10
     return detection_rate
     
 
@@ -115,7 +115,7 @@ def frame_sampler(source, path, predictor, vis_folder, args):
     img_info = {}
     img_info["height"] = height
     img_info["width"] = width
-    detection_rate = 15
+    detection_rate = 10
     while True:
         ret_val, frame = cap.read()
         if ret_val:
@@ -148,7 +148,6 @@ def frame_sampler(source, path, predictor, vis_folder, args):
                     for idx_t, t in enumerate(online_targets):
                         tlwh = t.tlwh
                         tid = t.track_id
-                       # print(f"tid: {tid}  tlwh: {tlwh}")
                         tlbr = np.asarray(tlwh).copy()
                         tlbr[2:] += tlbr[:2]
                         tlbr=np.append(tlbr,[t.score, t.class_id])
@@ -166,10 +165,10 @@ def frame_sampler(source, path, predictor, vis_folder, args):
                                 light_tracker_list.append((int(t.tlwh[0]),int(t.tlwh[1]),int(t.tlwh[2]),int(t.tlwh[3])))
                                 light_tracker_id.append(tid)
                             if t.class_id == 0:     # person only
-                                print(f"{frame_id},{t.track_id},{t.tlwh[0]},{t.tlwh[1]},{t.tlwh[2]},{t.tlwh[3]},{t.score},-1,-1,-1")
+                                
                                 detection_result[frame_id][t.track_id]=(t.tlwh[0],t.tlwh[1],t.tlwh[2],t.tlwh[3])
+                            print(f"{frame_id},{t.track_id},{t.tlwh[0]},{t.tlwh[1]},{t.tlwh[2]},{t.tlwh[3]},{t.score},-1,-1,-1")
 
-                #    print(f"light list: {light_tracker_list}")
                     for each in light_tracker_list:
                         light_multi_tracker.add(cv2.TrackerMedianFlow_create(), frame, each)
                     
@@ -179,11 +178,9 @@ def frame_sampler(source, path, predictor, vis_folder, args):
                     online_im = plot_tracking(
                         image=img_info['raw_img'], tlwhs=online_tlwhs, obj_ids=online_ids, online_class_id=online_class_id, frame_id=frame_id + 1, fps=fps, scores=online_scores, class_names = cls_names
                     )
-                   # print(f"det time: {(time.time()-det_start)*1000}")
 
                 else:
                     online_im = img_info['raw_img']
-
 
             else:
 
@@ -254,7 +251,7 @@ def frame_sampler(source, path, predictor, vis_folder, args):
                             online_class_id.append(t.class_id)
                             if t.class_id == 0:     # person only
                                 detection_result[frame_id][t.track_id]=(t.tlwh[0],t.tlwh[1],t.tlwh[2],t.tlwh[3])
-                                print(f"{frame_id},{t.track_id},{t.tlwh[0]},{t.tlwh[1]},{t.tlwh[2]},{t.tlwh[3]},{t.score},-1,-1,-1")
+                        print(f"{frame_id},{t.track_id},{t.tlwh[0]},{t.tlwh[1]},{t.tlwh[2]},{t.tlwh[3]},{t.score},-1,-1,-1")        
 
                     online_im = plot_tracking(
                         image=img_info['raw_img'], tlwhs=online_tlwhs, obj_ids=online_ids, online_class_id=online_class_id, frame_id=frame_id + 1, fps=fps, scores=online_scores, class_names = cls_names
@@ -294,7 +291,7 @@ if __name__ == '__main__':
     parser.add_argument('-p', "--path", type=str, default=None, help="choose a video")
     parser.add_argument("-m", "--model", type=str, default=None, help="model name")
     parser.add_argument("-c", "--ckpt", default=None, type=str, help="ckpt for eval")
-    parser.add_argument("--conf", default=0.2, type=float, help="test conf")
+    parser.add_argument("--conf", default=0.3, type=float, help="test conf")
     parser.add_argument("--nms", default=0.3, type=float, help="test nms threshold")
     parser.add_argument("--tsize", default=None, type=int, help="test img size")
     parser.add_argument("--save_result", action="store_true", help="whether to save the inference result of image/video")
@@ -303,7 +300,7 @@ if __name__ == '__main__':
     parser.add_argument("--fuse",dest="fuse",default=False,action="store_true",help="Fuse conv and bn for testing.")
     parser.add_argument("--mot",dest="mot",default=False,action="store_true",help="Fuse conv and bn for testing.")
     # tracking arg
-    parser.add_argument("--track_thresh", type=float, default=0.3, help="tracking confidence threshold")
+    parser.add_argument("--track_thresh", type=float, default=0.5, help="tracking confidence threshold")
     parser.add_argument("--track_buffer", type=int, default=30, help="the frames for keep lost tracks")
     parser.add_argument("--match_thresh", type=float, default=0.7, help="matching threshold for tracking")
     parser.add_argument("--aspect_ratio_thresh", type=float, default=1.6, help="threshold for filtering out boxes of which aspect ratio are above the given value.")

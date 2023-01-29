@@ -202,19 +202,12 @@ class BYTETracker(object):
         if "yolox" in self.args.model:
             bboxes /= scale
 
-        # detection with high scores
+        # detection with high scores -> usually means clear view, no occulsion
+
         remain_inds = scores > self.args.track_thresh
-        inds_low = scores > 0.1
-        inds_high = scores < self.args.track_thresh
-        
-        #detection with low scores
-        inds_second = np.logical_and(inds_low, inds_high)
-        dets_second = bboxes[inds_second]
         dets = bboxes[remain_inds]
         scores_keep = scores[remain_inds]
         class_keep = cls_name[remain_inds]
-        scores_second = scores[inds_second]
-        class_second = cls_name[inds_second]
 
 
         if len(dets) > 0:
@@ -253,31 +246,6 @@ class BYTETracker(object):
                 track.re_activate(det, self.frame_id, new_id=False)
                 refind_stracks.append(track)
 
-        ''' Step 3: Second association, with low score detection boxes'''
-        # association the untrack to the low score detections
-        if len(dets_second) > 0:
-            '''Detections'''
-            detections_second = [STrack(STrack.tlbr_to_tlwh(tlbr), s, c) for
-                          (tlbr, s, c) in zip(dets_second, scores_second, class_second)]
-        else:
-            detections_second = []
-
-        # for unmatched tracks from the first association, if the state is Tracked, then put it in r_tracked_stracks
-        r_tracked_stracks = [strack_pool[i] for i in u_track if strack_pool[i].state == TrackState.Tracked]
-
-        dists = matching.iou_distance(r_tracked_stracks, detections_second)
-        matches, u_track, u_detection_second = matching.linear_assignment(dists, thresh=0.5)
-
-        # assocated the lower score detection with the rest of tracks
-        for itracked, idet in matches:
-            track = r_tracked_stracks[itracked]
-            det = detections_second[idet]
-            if track.state == TrackState.Tracked:
-                track.update(det, self.frame_id)
-                activated_stracks.append(track)
-            else:
-                track.re_activate(det, self.frame_id, new_id=False)
-                refind_stracks.append(track)
         
         '''Deal with unconfirmed tracks, usually tracks with only one beginning frame'''
         detections = [detections[i] for i in u_detection]
@@ -314,14 +282,12 @@ class BYTETracker(object):
                     tmp_match = j
                     tmo_best = (wass_b + wass_g + wass_r)/3
             matching_pair.append((i,tmp_match))
-        #print(f"matching_pair: {matching_pair}")
 
         for each_pair in matching_pair:
             if each_pair[1] != -1:
                 unconfirmed[each_pair[0]].update(detections[each_pair[1]], self.frame_id)
                 u_unconfirmed.pop(each_pair[0])     
                 u_detection.pop(each_pair[1])
-
 
         # for remaining unmatched tracks, remove them from the tracks    
 
@@ -346,14 +312,13 @@ class BYTETracker(object):
         """ matching new track with fast moving object"""
         # matching the fast moving objects:
         # find the un matched tracks
-        rem_tracks = [r_tracked_stracks[i] for i in u_track]
+        rem_tracks = [strack_pool[i] for i in u_track]
 
         # find the unmatched detections with high detection scores
         detections = tmp_active 
         dist = matching.iou_distance(rem_tracks, tmp_active)
         if dist.size != 0:
             tmp_match = list(np.argmin(dist,axis=1))
-          #  print(f"tmp_match: {tmp_match}")
             for idx, each in enumerate(tmp_match):
                 if dist[idx][each]==1:
                     tmp_match[idx]=-1
@@ -520,9 +485,9 @@ class BYTETracker(object):
 
         lost_stracks = []
         for idx in u_track:
-            print(u_track)
-            print(len(u_track))
-            print(len(r_tracked_stracks))
+            # print(u_track)
+            # print(len(u_track))
+            # print(len(r_tracked_stracks))
             track = r_tracked_stracks[idx]
             if not track.state == TrackState.Lost:
                 track.mark_lost()
