@@ -22,13 +22,12 @@ def pixel_distribution(img, tl_x, tl_y, width, height):
     cv2.normalize(hist_b,hist_b,alpha=0, beta=1, norm_type=cv2.NORM_MINMAX)
     cv2.normalize(hist_g,hist_g,alpha=0, beta=1, norm_type=cv2.NORM_MINMAX)
     cv2.normalize(hist_r,hist_r,alpha=0, beta=1, norm_type=cv2.NORM_MINMAX)
-    return (hist_b, hist_g, hist_r)
+    return (hist_b.flatten(), hist_g.flatten(), hist_r.flatten())
 
 class STrack(BaseTrack):
     shared_kalman = KalmanFilter()
     def __init__(self, tlwh, score, class_id):
 
-        # wait activate
         self._tlwh = np.asarray(tlwh, dtype=np.float)
         self.kalman_filter = None
         self.mean, self.covariance = None, None
@@ -36,9 +35,6 @@ class STrack(BaseTrack):
         self.class_id = int(class_id)
         self.score = score
         self.tracklet_len = 0
-      #  self.first_seen = 0
-        self.kalman_adjust = False
-        self.kalman_adjust_period = 5
         self.color_dist = None
         self.dist_threshold = None
 
@@ -60,19 +56,14 @@ class STrack(BaseTrack):
             for i, (mean, cov) in enumerate(zip(multi_mean, multi_covariance)):
                 stracks[i].mean = mean
                 stracks[i].covariance = cov
-            #print(f"multi_mean: {multi_mean}")
 
     def activate(self, kalman_filter, frame_id):
         """Start a new tracklet"""
         self.kalman_filter = kalman_filter
         self.track_id = self.next_id()
         self.mean, self.covariance = self.kalman_filter.initiate(self.tlwh_to_xyah(self._tlwh))
-        #print(f"mean after kalman init: {self.mean}")
-
         self.tracklet_len = 0
         self.state = TrackState.Tracked
-        #if frame_id == 1:
-        #    self.is_activated = True
         self.is_activated = True
         self.frame_id = frame_id
         self.start_frame = frame_id
@@ -101,7 +92,6 @@ class STrack(BaseTrack):
         self.tracklet_len += 1
 
         new_tlwh = new_track.tlwh
-        # this is updated by Xiang Li
         self._tlwh = new_tlwh
         self.mean, self.covariance = self.kalman_filter.update(
             self.mean, self.covariance, self.tlwh_to_xyah(new_tlwh))
@@ -111,7 +101,6 @@ class STrack(BaseTrack):
         self.score = new_track.score
 
     @property
-    # @jit(nopython=True)
     def tlwh(self):
         """Get current position in bounding box format `(top left x, top left y,
                 width, height)`.
@@ -124,7 +113,6 @@ class STrack(BaseTrack):
         return ret
 
     @property
-    # @jit(nopython=True)
     def tlbr(self):
         """Convert bounding box to format `(min x, min y, max x, max y)`, i.e.,
         `(top left, bottom right)`.
@@ -134,7 +122,6 @@ class STrack(BaseTrack):
         return ret
 
     @staticmethod
-    # @jit(nopython=True)
     def tlwh_to_xyah(tlwh):
         """Convert bounding box to format `(center x, center y, aspect ratio,
         height)`, where the aspect ratio is `width / height`.
@@ -148,14 +135,12 @@ class STrack(BaseTrack):
         return self.tlwh_to_xyah(self.tlwh)
 
     @staticmethod
-    # @jit(nopython=True)
     def tlbr_to_tlwh(tlbr):
         ret = np.asarray(tlbr).copy()
         ret[2:] -= ret[:2]
         return ret
 
     @staticmethod
-    # @jit(nopython=True)
     def tlwh_to_tlbr(tlwh):
         ret = np.asarray(tlwh).copy()
         ret[2:] += ret[:2]
@@ -165,70 +150,62 @@ class STrack(BaseTrack):
         return 'OT_{}_({}-{})'.format(self.track_id, self.start_frame, self.end_frame)
 
 
-class BYTETracker(object):
+class HOPTracker(object):
     def __init__(self, args, frame_rate=30):
-        self.tracked_stracks = []  # type: list[STrack]
-        self.lost_stracks = []  # type: list[STrack]
-        self.removed_stracks = []  # type: list[STrack]
+        self.tracked_stracks = []   # type: list[STrack], include all tracks thats not removed
+        self.lost_stracks = []      # type: list[STrack], include lost tracks
+        self.removed_stracks = []   # type: list[STrack], include tracks removed 
 
         self.frame_id = 0
         self.args = args
-        #self.det_thresh = args.track_thresh
-       # self.det_thresh = args.track_thresh + 0.1
         self.buffer_size = int(frame_rate / 30.0 * args.track_buffer)
         self.max_time_lost = self.buffer_size
         self.kalman_filter = KalmanFilter()
 
-    def update(self, output_results, img_info, img_size):
-        self.frame_id += 1
-        activated_stracks = []
-        refind_stracks = []
-        lost_stracks = []
-        removed_stracks = []
 
-        if output_results.shape[1] == 6:
-            output_results = output_results.cpu().numpy()
-            scores = output_results[:, 4]
-            bboxes = output_results[:, :4]
-            cls_name = output_results[:,5]
-        else:
-            output_results = output_results.cpu().numpy()
-            scores = output_results[:, 4] * output_results[:, 5]
-            cls_name = output_results[:,6]
-            bboxes = output_results[:, :4]  # x1y1x2y2
+    def detect_track_fuse(self, output_results, img_info, img_size):
+        self.frame_id += 1
+        activate_tracks = []            # keep track of online tracks
+        refind_stracks = []             # keep track of reactivatede tracks
+        lost_stracks = []               # keep track of lost tracks
+        removed_stracks = []            # keep track of removed tracks
+   
+        # output result are the most recent detection result from DNN
+        output_results = output_results.cpu().numpy()
+        scores = output_results[:, 4]
+        bboxes = output_results[:, :4]
+        cls_name = output_results[:,5]
 
         img_h, img_w, frame = img_info[0], img_info[1], img_info[2]
         scale = min(img_size[0] / float(img_h), img_size[1] / float(img_w))
+        
         if "yolox" in self.args.model:
             bboxes /= scale
 
         # detection with high scores -> usually means clear view, no occulsion
-
         remain_inds = scores > self.args.track_thresh
         dets = bboxes[remain_inds]
         scores_keep = scores[remain_inds]
         class_keep = cls_name[remain_inds]
 
-
+        # create a track for every single detection
         if len(dets) > 0:
-            '''Detections: bounding boxes of objects that has a score > track thresh'''
             detections = [STrack(STrack.tlbr_to_tlwh(tlbr), s, c) for
                           (tlbr, s, c) in zip(dets, scores_keep, class_keep)]
         else:
             detections = []
 
-        ''' Add newly detected tracklets to tracked_stracks'''
         unconfirmed = []
-        tracked_stracks = []  # type: list[STrack]
+        tracked_tracks = []         # keep track of the activated tracks in the current fusion
 
         for track in self.tracked_stracks:
             if not track.is_activated:
                 unconfirmed.append(track)
             else:
-                tracked_stracks.append(track)
+                tracked_tracks.append(track)
 
-        ''' Step 2: First association, with high score detection boxes'''
-        strack_pool = joint_stracks(tracked_stracks, self.lost_stracks)
+        # IoU based association -> may run wasserstain distance check to make sure no cross association happened
+        strack_pool = joint_stracks(tracked_tracks, self.lost_stracks)
 
         # Predict the current location with KF
         STrack.multi_predict(strack_pool)
@@ -236,24 +213,40 @@ class BYTETracker(object):
         matches, u_track, u_detection = matching.linear_assignment(dists, thresh=self.args.match_thresh)
 
         # associate the tracks in the high score detection with the existing tracks
+        unmatch_high_det = []
+        unmatch_high_track = []
         for itracked, idet in matches:
             track = strack_pool[itracked]
             det = detections[idet]
-            if track.state == TrackState.Tracked:
-                track.update(detections[idet], self.frame_id)
-                activated_stracks.append(track)
-            else:
-                track.re_activate(det, self.frame_id, new_id=False)
-                refind_stracks.append(track)
+            top_x, top_y, tw, th = det._tlwh
+            hist_b, hist_g, hist_r = pixel_distribution(frame, int(top_x), int(top_y), int(tw), int(th))
+            wass_b = wasserstein_distance( hist_b, track.color_dist[0])
+            wass_g = wasserstein_distance( hist_g, track.color_dist[1])
+            wass_r = wasserstein_distance( hist_r, track.color_dist[2])
 
-        
-        '''Deal with unconfirmed tracks, usually tracks with only one beginning frame'''
+            if (wass_b + wass_g + wass_r)/3 < 0.5:
+                if track.state == TrackState.Tracked:
+                    track.update(detections[idet], self.frame_id)
+                    activate_tracks.append(track)
+                else:
+                    track.re_activate(det, self.frame_id, new_id=False)
+                    refind_stracks.append(track)
+            else:
+                unmatch_high_det.append(det)
+                unmatch_high_track.append(track)
+    
+        """ Need to run an additional wassertain distance for unmatched object from high confidence: the case that involved large displacement"""
+
+
+        """ not sure if this is needed, need further testing """
         detections = [detections[i] for i in u_detection]
+        for each in unmatch_high_det:
+            detections.append(each)
         dists = matching.iou_distance(unconfirmed, detections)
         matches, u_unconfirmed, u_detection = matching.linear_assignment(dists, thresh=0.7)
         for itracked, idet in matches:
             unconfirmed[itracked].update(detections[idet], self.frame_id)
-            activated_stracks.append(unconfirmed[itracked])
+            activate_tracks.append(unconfirmed[itracked])
 
         #before removing the unconfirmed track, try to perform an analysis of wassertein distance
         detection_his = []
@@ -264,6 +257,7 @@ class BYTETracker(object):
             hist_b, hist_g, hist_r = pixel_distribution(frame, int(top_x), int(top_y), int(tw), int(th))
             detection_his.append([hist_b, hist_g, hist_r])
         
+        """shouldn't use the current frame for the wassestin distance, should be the previous detection one"""
         for it in u_unconfirmed:
             unconfirmed_track = unconfirmed[it]
             top_x, top_y, tw, th = unconfirmed_track._tlwh
@@ -297,28 +291,28 @@ class BYTETracker(object):
             removed_stracks.append(track)
 
 
-        """ Step 4: Init new stracks"""
+        # initiating new tracks for new objects
         tmp_active=[]
         for inew in u_detection:
-          #  print("creating new trackssssssssssssssssss!")
             track = detections[inew]
             if track.score < 0.35:
                 continue
             track.activate(self.kalman_filter, self.frame_id)
             tmp_active.append(track)
             
-         #   print(f"activated_stracks: {activated_stracks}")
 
         """ matching new track with fast moving object"""
         # matching the fast moving objects:
         # find the un matched tracks
         rem_tracks = [strack_pool[i] for i in u_track]
+        for each in unmatch_high_track:
+            rem_track.append(each)
 
         # find the unmatched detections with high detection scores
-        detections = tmp_active 
+        detections = tmp_active                                     # detections not matched with IoU or unconfirmed
         dist = matching.iou_distance(rem_tracks, tmp_active)
         if dist.size != 0:
-            tmp_match = list(np.argmin(dist,axis=1))
+            tmp_match = list(np.argmin(dist,axis=1))        # this tmp match is trying to mapping the temporary new tracks with remaining tracks
             for idx, each in enumerate(tmp_match):
                 if dist[idx][each]==1:
                     tmp_match[idx]=-1
@@ -334,26 +328,33 @@ class BYTETracker(object):
                         old_center_y = ot_y + ot_h/2
                         new_center_x = nd_x + nd_w/2
                         new_center_y = nd_y + nd_h/2
-                        new_vx = (new_center_x - old_center_x)/9 # cuz we have 10 frames in the middle, need to change correspondingly
-                        new_vy = (new_center_y - old_center_y)/9 # keep 7 for the traffic video test
+                        new_vx = (new_center_x - old_center_x) # cuz we have 10 frames in the middle, need to change correspondingly
+                        new_vy = (new_center_y - old_center_y) # keep 7 for the traffic video test
                         rem_tracks[idx].mean[4] = new_vx  
                         rem_tracks[idx].mean[5] = new_vy
-                        activated_stracks.append(rem_tracks[idx])
+                        activate_tracks.append(rem_tracks[idx])
 
             # mark the rest of tracks as lost tracks, need to move to later section
-            for idx, each in enumerate(tmp_match):
+            for idx, each in enumerate(tmp_match):          
                 if each == -1:
                     track = rem_tracks[idx]
                     if not track.state == TrackState.Lost:
                         track.mark_lost()
                         lost_stracks.append(track)
 
-            for idx, each in enumerate(tmp_active):
+            for idx, each in enumerate(tmp_active):  #if not in the match, which means its a true new objects
                 if idx not in tmp_match or len(tmp_match)==0:
-                    activated_stracks.append(each)
+                    activate_tracks.append(each)
         else:
+            # if no match which means all the newly created tracks are new objects
             for idx, each in enumerate(tmp_active):
-                activated_stracks.append(each)
+                activate_tracks.append(each)
+            
+            # if not match, all remaing track are lost tracks
+            for each in rem_tracks:          
+                if not each.state == TrackState.Lost:
+                    track.mark_lost()
+                    lost_stracks.append(track)         
 
         """ Step 5: Update state"""
         for track in self.lost_stracks:
@@ -362,7 +363,7 @@ class BYTETracker(object):
                 removed_stracks.append(track)
 
         self.tracked_stracks = [t for t in self.tracked_stracks if t.state == TrackState.Tracked]
-        self.tracked_stracks = joint_stracks(self.tracked_stracks, activated_stracks)
+        self.tracked_stracks = joint_stracks(self.tracked_stracks, activate_tracks)
         self.tracked_stracks = joint_stracks(self.tracked_stracks, refind_stracks)
         self.lost_stracks = sub_stracks(self.lost_stracks, self.tracked_stracks)
         self.lost_stracks.extend(lost_stracks)
@@ -373,58 +374,43 @@ class BYTETracker(object):
         
         return output_stracks
 
-    def new_update(self, output_results, img_info, img_size):
+    def hopping_update(self, output_results, img_info, img_size):
         self.frame_id += 1
-        activated_stracks = []
+        activate_tracks = []
         refind_stracks = []
         lost_stracks = []
         removed_stracks = []
 
-        if output_results.shape[1] == 6:
-            scores = output_results[:, 4]
-            bboxes = output_results[:, :4]
-            cls_name = output_results[:,5]
-        else:
-            output_results = output_results.cpu().numpy()
-            scores = output_results[:, 4] * output_results[:, 5]
-            cls_name = output_results[:,6]
-            bboxes = output_results[:, :4]  # x1y1x2y2
+        scores = output_results[:, 4]
+        bboxes = output_results[:, :4]
+        cls_name = output_results[:,5]
 
         img_h, img_w, frame = img_info[0], img_info[1], img_info[2]
 
-
-        inds_low = scores < self.args.track_thresh
-        inds_high = scores >= 0.3 #self.args.track_thresh
+        inds_high = scores >= 0.3   #self.args.track_thresh
         
         #detection with high scores
         dets = bboxes[inds_high]
         scores_keep = scores[inds_high]
         class_keep = cls_name[inds_high]
 
-        ## detection with high scores
-        dets_second = bboxes[inds_low]
-        scores_second = scores[inds_low]
-        class_second = cls_name[inds_low]
-
         if len(dets) > 0:
-            '''Detections: bounding boxes of objects that has a score > track thresh'''
             detections = [STrack(STrack.tlbr_to_tlwh(tlbr), s, c) for
                           (tlbr, s, c) in zip(dets, scores_keep, class_keep)]
         else:
             detections = []
 
-        ''' Add newly detected tracklets to tracked_stracks'''
         unconfirmed = []
-        tracked_stracks = []  # type: list[STrack]
+        tracked_tracks = []  # type: list[STrack]
 
         for track in self.tracked_stracks:
             if not track.is_activated:
                 unconfirmed.append(track)
             else:
-                tracked_stracks.append(track)
+                tracked_tracks.append(track)
 
-        ''' Step 2: First association, with high score detection boxes'''
-        strack_pool = joint_stracks(tracked_stracks, self.lost_stracks)
+        # association based on kalman filter predicted position, theorectically they should align
+        strack_pool = joint_stracks(tracked_tracks, self.lost_stracks)
 
         # Predict the current location with KF
         STrack.multi_predict(strack_pool)
@@ -438,7 +424,7 @@ class BYTETracker(object):
             det = detections[idet]
             if track.state == TrackState.Tracked:
                 track.update(det, self.frame_id)
-                activated_stracks.append(track)
+                activate_tracks.append(track)
             else:
                 track.re_activate(det, self.frame_id, new_id=False)
                 refind_stracks.append(track)
@@ -454,7 +440,6 @@ class BYTETracker(object):
         u_detectons = []
         while len(r_tracked_stracks)>0 and len(unmatched_detections)>0 and new_thresh > 0.1:
             new_thresh -= 0.1
-           # r_tracked_stracks = [r_tracked_stracks[i] for i in u_track]
             dists = matching.iou_distance(r_tracked_stracks, unmatched_detections)
             matches, u_track, u_detection = matching.linear_assignment(dists, thresh=new_thresh)
 
@@ -473,21 +458,18 @@ class BYTETracker(object):
                 if average_wass < 0.5:
                     if track.state == TrackState.Tracked:
                         track.update(det, self.frame_id)
-                        activated_stracks.append(track)
+                        activate_tracks.append(track)
                     else:
                         track.re_activate(det, self.frame_id, new_id=False)
                         refind_stracks.append(track)
                 else:
                     potentially_lost.append(itrack)
                     detection_occulusion.append(idet)
-            #unmatched_detections = [unmatched_detections[i] for i in u_detection] 
 
 
         lost_stracks = []
         for idx in u_track:
-            # print(u_track)
-            # print(len(u_track))
-            # print(len(r_tracked_stracks))
+
             track = r_tracked_stracks[idx]
             if not track.state == TrackState.Lost:
                 track.mark_lost()
@@ -507,7 +489,7 @@ class BYTETracker(object):
                 removed_stracks.append(track)
 
         self.tracked_stracks = [t for t in self.tracked_stracks if t.state == TrackState.Tracked]
-        self.tracked_stracks = joint_stracks(self.tracked_stracks, activated_stracks)
+        self.tracked_stracks = joint_stracks(self.tracked_stracks, activate_tracks)
         self.tracked_stracks = joint_stracks(self.tracked_stracks, refind_stracks)
         self.lost_stracks = sub_stracks(self.lost_stracks, self.tracked_stracks)
         self.lost_stracks.extend(lost_stracks)

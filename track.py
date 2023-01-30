@@ -1,18 +1,17 @@
-from sklearn.cluster import DBSCAN
+
 import argparse, cv2
 import os
 import argparse
 import os,sys
 import time
 from loguru import logger
-from utils import EXP, Predictor, build_engine
+from utils import EXP, Predictor, build_engine, dbscan_clustering, detection_rate_adjuster, trail_run
 import json
 import threading
 import tensorrt as trt
 import pycuda.driver as cuda
 import pycuda.autoinit
 import warnings
-
 
 sys.path.insert(0, '/data/Video_Colab')
 
@@ -26,70 +25,22 @@ from yolox.data.data_augment import ValTransform
 from yolox.data.datasets import COCO_CLASSES
 from yolox.utils import fuse_model, get_model_info, postprocess, vis
 from yolox.utils.visualize import plot_tracking
-from yolox.tracker.byte_tracker import BYTETracker
+from yolox.tracker.hop_tracker import HOPTracker, pixel_distribution
 from yolox.tracking_utils.timer import Timer
 
-
-
-def dbscan_clustering(online_targets):
-    
-    centroid_list = []
-    tid_list = []
-    for each_track in online_targets:
-        tid, tlwh = each_track.track_id, each_track.tlwh
-        x,y,w,h = tlwh
-        tid_list.append(tid)
-        centroid_list.append([x+w/2, y+h/2])
-    cluster = DBSCAN(eps=50, min_samples=2).fit(centroid_list)
-   # print(cluster.labels_)
-    
-    cluster_dic = {}
-    cluster_num = 0
-    for idx, each in enumerate(cluster.labels_):
-        if each != -1 and each not in cluster_dic.keys():
-            cluster_dic[each]=[tid_list[idx]]
-            cluster_num += 1
-        else:
-            if each != -1:
-                cluster_dic[each].append(tid_list[idx])
-            else:
-                cluster_num += 1
-  #  print(cluster_dic)
-    return cluster_dic, cluster_num
-
-def detection_rate_adjuster(cluster_dic, cluster_num):
-    if cluster_num > 0 :
-        detection_rate = 5
-    else:
-        detection_rate = 10
-    return detection_rate
-    
-
-def trail_run(predictor, frame, fps):
-    for i in range(5):
-        outputs, img_info = predictor.inference(frame)
-  #  print("system preheat")
-    start = time.time()
-    outputs, img_info = predictor.inference(frame)
-    result_frame = predictor.visual(outputs[0], img_info, predictor.confthre)
-    end = time.time()
-    num_track = math.ceil((end-start)/(1/fps))
-    return num_track
-
-
-def frame_sampler(source, path, predictor, vis_folder, args):
-    
-    cls_names = COCO_CLASSES
+def start_process(source, path, predictor, vis_folder, args):
 
     if source == "webcam":
         cap = cv2.VideoCapture(source)
     else:
         cap = cv2.VideoCapture(path)
 
+    # retrieve frame width and height
     width = cap.get(cv2.CAP_PROP_FRAME_WIDTH) 
     height = cap.get(cv2.CAP_PROP_FRAME_HEIGHT) 
     fps = cap.get(cv2.CAP_PROP_FPS)
 
+    # save results 
     if args.save_result:
         save_folder = os.path.join(vis_folder, time.strftime("%Y_%m_%d_%H_%M_%S", time.localtime()))
         os.makedirs(save_folder, exist_ok=True)
@@ -101,11 +52,9 @@ def frame_sampler(source, path, predictor, vis_folder, args):
 
         logger.info(f"video save_path is {save_path}")
         vid_writer = cv2.VideoWriter(save_path, cv2.VideoWriter_fourcc(*"mp4v"), fps, (int(width), int(height)))
-        
 
-   # ret_val, frame = cap.read()
-   # num_track = trail_run(predictor, frame, fps)               #uncomment this when testing latency
-    tracker = BYTETracker(args, frame_rate=math.ceil(fps))
+    #         
+    tracker = HOPTracker(args, frame_rate=math.ceil(fps))
     light_multi_tracker = cv2.MultiTracker_create()
     detection_result = {}
     
@@ -116,14 +65,13 @@ def frame_sampler(source, path, predictor, vis_folder, args):
     img_info["height"] = height
     img_info["width"] = width
     detection_rate = 10
+
     while True:
         ret_val, frame = cap.read()
         if ret_val:
             # for mota measurement purpose
             if frame_id not in detection_result.keys():
                 detection_result[frame_id]={}
-
-           # print(f"=====================================================frame {frame_id}============================================")
             
             img_info["raw_img"] = frame
 
@@ -135,7 +83,7 @@ def frame_sampler(source, path, predictor, vis_folder, args):
 
                 # the mean in the kalman filter object has all 8 states, potentially expose that to the following interface and do prediction.
                 if outputs[0] is not None:
-                    online_targets = tracker.update(outputs[0], [img_info['height'], img_info['width'], img_info["raw_img"]], exp.test_size)
+                    online_targets = tracker.detect_track_fuse(outputs[0], [img_info['height'], img_info['width'], img_info["raw_img"]], exp.test_size)
 
                     online_tlwhs = []
                     online_ids = []
@@ -153,9 +101,9 @@ def frame_sampler(source, path, predictor, vis_folder, args):
                         tlbr=np.append(tlbr,[t.score, t.class_id])
                         tlbr=np.append(tlbr,[tid,t.mean])
                         predicted_bbox.append(tlbr)
-
+                        hist_b, hist_g, hist_r = pixel_distribution(frame, int(t.tlwh[0]), int(t.tlwh[1]), int(t.tlwh[2]), int(t.tlwh[3]))
+                        t.color_dist = [hist_b, hist_g, hist_r]
                         if tlwh[2] * tlwh[3] > args.min_box_area: 
-                           # t.color_dist = pixel_distribution(frame, int(t.tlwh[0]), int(t.tlwh[1]), int(t.tlwh[2]), int(t.tlwh[3]))
                             online_tlwhs.append(tlwh)
                             online_ids.append(tid)
                             online_scores.append(t.score)
@@ -176,7 +124,7 @@ def frame_sampler(source, path, predictor, vis_folder, args):
                     detection_rate = detection_rate_adjuster(cluster_dic, cluster_num)
 
                     online_im = plot_tracking(
-                        image=img_info['raw_img'], tlwhs=online_tlwhs, obj_ids=online_ids, online_class_id=online_class_id, frame_id=frame_id + 1, fps=fps, scores=online_scores, class_names = cls_names
+                        image=img_info['raw_img'], tlwhs=online_tlwhs, obj_ids=online_ids, online_class_id=online_class_id, frame_id=frame_id + 1, fps=fps, scores=online_scores, class_names = COCO_CLASSES
                     )
 
                 else:
@@ -224,7 +172,8 @@ def frame_sampler(source, path, predictor, vis_folder, args):
 
                     # using the predicted bbox as the new detection result and feed into the tracker update
                     tk_update = time.time()
-                    online_targets = tracker.new_update(predicted_bbox, [img_info['height'], img_info['width'], img_info['raw_img']], exp.test_size)
+                    online_targets = tracker.hopping_update(predicted_bbox, [img_info['height'], img_info['width'], img_info['raw_img']], exp.test_size)
+                    
                     # the following dynamic sampling might be enabled 
                     #cluster_dic, cluster_num = dbscan_clustering(online_targets)
                     #detection_rate = detection_rate_adjuster(cluster_dic, cluster_num)
@@ -254,9 +203,8 @@ def frame_sampler(source, path, predictor, vis_folder, args):
                         print(f"{frame_id},{t.track_id},{t.tlwh[0]},{t.tlwh[1]},{t.tlwh[2]},{t.tlwh[3]},{t.score},-1,-1,-1")        
 
                     online_im = plot_tracking(
-                        image=img_info['raw_img'], tlwhs=online_tlwhs, obj_ids=online_ids, online_class_id=online_class_id, frame_id=frame_id + 1, fps=fps, scores=online_scores, class_names = cls_names
+                        image=img_info['raw_img'], tlwhs=online_tlwhs, obj_ids=online_ids, online_class_id=online_class_id, frame_id=frame_id + 1, fps=fps, scores=online_scores, class_names = COCO_CLASSES
                     )
-                    #print(f"track time: {(time.time()-track_start)*1000}")
                 else:
                     online_im = img_info['raw_img']
             
@@ -275,7 +223,7 @@ def frame_sampler(source, path, predictor, vis_folder, args):
         else:
             break
     video_end = time.time()
-   # print(f"video processing time is {video_end - video_start}")
+
     with open(f"{args.path.split('.')[0]}_result.json",'w') as fp:
         json.dump(detection_result,fp)  
     cap.release()
@@ -382,11 +330,6 @@ if __name__ == '__main__':
 
         logger.info("Model Summary: {}".format(get_model_info(model, exp.test_size)))
 
-        # if torch.cuda.is_available():
-        #     model.cuda()
-        #     if args.fp16:
-        #         model.half()  # to FP16
-
         if "yolox" in args.model:
             logger.info("loading checkpoint")
             ckpt = torch.load(args.ckpt, map_location="cpu")
@@ -402,7 +345,5 @@ if __name__ == '__main__':
     else:
         device = "cpu"
 
-
     predictor = Predictor(args, model, exp, trt_engine, COCO_CLASSES, device, args.fp16, args.legacy)
-
-    frame_sampler(args.source, args.path, predictor, vis_folder, args)
+    start_process(args.source, args.path, predictor, vis_folder, args)
