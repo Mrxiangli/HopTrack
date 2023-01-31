@@ -1,17 +1,44 @@
 import os
+import cv2
+import time
 import random
+import numpy as np
+from loguru import logger
 
 import torch
-import torch.distributed as dist
 import torch.nn as nn
-import time
-from loguru import logger
+import torch.distributed as dist
 
 from torch.nn import Module
 
-from yolox.data.data_augment import ValTransform
 from yolox.data.datasets import COCO_CLASSES
+from yolox.data.data_augment import ValTransform
 from yolox.utils import fuse_model, get_model_info, postprocess, vis
+
+
+def preproc(image, input_size, mean, std, swap=(2, 0, 1)):
+    if len(image.shape) == 3:
+        padded_img = np.ones((input_size[0], input_size[1], 3)) * 114.0
+    else:
+        padded_img = np.ones(input_size) * 114.0
+    img = np.array(image)
+    r = min(input_size[0] / img.shape[0], input_size[1] / img.shape[1])
+    resized_img = cv2.resize(
+        img,
+        (int(img.shape[1] * r), int(img.shape[0] * r)),
+        interpolation=cv2.INTER_LINEAR,
+    ).astype(np.float32)
+    padded_img[: int(img.shape[0] * r), : int(img.shape[1] * r)] = resized_img
+
+    padded_img = padded_img[:, :, ::-1]
+    padded_img /= 255.0
+    if mean is not None:
+        padded_img -= mean
+    if std is not None:
+        padded_img /= std
+    padded_img = padded_img.transpose(swap)
+    padded_img = np.ascontiguousarray(padded_img, dtype=np.float32)
+    return padded_img, r
 
 
 class EXP:
@@ -20,7 +47,7 @@ class EXP:
         # ---------------- model config ---------------- #
         # detect classes number of model
         self.model = None
-        self.num_classes = 80
+        self.num_classes = 1
         # factor of model depth
         self.depth = depth
         # factor of model width
@@ -28,7 +55,8 @@ class EXP:
         # activation name. For example, if using "relu", then "silu" will be replaced to "relu".
         self.act = "silu"
 
-        self.test_size = (640, 640)
+        self.test_size = (800, 1440)
+        # self.test_size = (640, 640)
         # confidence threshold during evaluation/test,
         # boxes whose scores are less than test_conf will be filtered
         self.test_conf = 0.01
@@ -68,6 +96,9 @@ class Predictor(object):
         self.fp16 = fp16
         self.preproc = ValTransform(legacy=legacy)
 
+        self.rgb_means = (0.485, 0.456, 0.406)
+        self.std = (0.229, 0.224, 0.225)
+
     def inference(self, img):
         img_info = {"id": 0}
         if isinstance(img, str):
@@ -84,7 +115,8 @@ class Predictor(object):
         ratio = min(self.test_size[0] / img.shape[0], self.test_size[1] / img.shape[1])
         img_info["ratio"] = ratio
 
-        img, _ = self.preproc(img, None, self.test_size)
+        # img, _ = self.preproc(img, None, self.test_size)
+        img, _ = preproc(img, self.test_size, self.rgb_means, self.std)
         img = torch.from_numpy(img).unsqueeze(0)
         img = img.float()
         if self.device == "gpu":

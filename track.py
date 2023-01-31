@@ -158,7 +158,7 @@ def frame_sampler(source, path, predictor, vis_folder, args, exp):
     width = cap.get(cv2.CAP_PROP_FRAME_WIDTH)  # float
     height = cap.get(cv2.CAP_PROP_FRAME_HEIGHT)  # float
     fps = cap.get(cv2.CAP_PROP_FPS)
-    print(f"current frame rate: {fps} fps")
+    # print(f"current frame rate: {fps} fps")
 
     if args.save_result:
         save_folder = os.path.join(vis_folder, time.strftime("%Y_%m_%d_%H_%M_%S", time.localtime()))
@@ -179,7 +179,7 @@ def frame_sampler(source, path, predictor, vis_folder, args, exp):
 
     tracker = BYTETracker(args, frame_rate=math.ceil(fps))
     
-    frame_id = 0
+    frame_id = 1
     img_info = {}
     online_targets = []
     light_track_id = []
@@ -189,13 +189,13 @@ def frame_sampler(source, path, predictor, vis_folder, args, exp):
     while True:
         ret_val, frame = cap.read()
         if ret_val:
-            print(f"============================================frame {frame_id}======================================")
+            # print(f"============================================frame {frame_id}======================================")
             height, width = frame.shape[:2]
             img_info["height"] = height
             img_info["width"] = width
             img_info["raw_img"] = frame
 
-            if frame_id % 20 == 0:
+            if frame_id % 10 == 1:
                 light_track_id = []
                 multiTracker = cv2.MultiTracker_create()
 
@@ -217,15 +217,19 @@ def frame_sampler(source, path, predictor, vis_folder, args, exp):
                     online_class_id = []
                     for t in online_targets:
                         if t.tlwh[2] * t.tlwh[3] > args.min_box_area:
-                            if sum(t.mean[4:]) == 0.0:
-                                multiTracker.add(cv2.TrackerMedianFlow_create(), frame, tuple(t.tlwh))
-                                light_track_id.append(t.track_id)
+                            if args.light:
+                                if sum(t.mean[4:]) == 0.0:
+                                    multiTracker.add(cv2.TrackerMedianFlow_create(), frame, tuple(t.tlwh))
+                                    light_track_id.append(t.track_id)
                             online_tlwhs.append(t.tlwh)
                             online_ids.append(t.track_id)
                             online_scores.append(t.score)
                             online_class_id.append(t.class_id)
                             detection_results[frame_id][t.track_id] = list(t.tlwh)
-                    print("==============plot track=================")
+
+                            print(
+                                f"{frame_id},{t.track_id},{t.tlwh[0]},{t.tlwh[1]},{t.tlwh[2]},{t.tlwh[3]},{t.score},-1,-1,-1")
+                    # print("==============plot track=================")
                     online_im = plot_tracking(
                         image=img_info['raw_img'], tlwhs=online_tlwhs, obj_ids=online_ids,
                         online_class_id=online_class_id, frame_id=frame_id + 1,
@@ -244,15 +248,16 @@ def frame_sampler(source, path, predictor, vis_folder, args, exp):
                 # print('MedianFlow time, ', end - start)
                 STrack.multi_predict(joint_stracks(online_targets, tracker.lost_stracks))
                 # print(success, light_track_id)
-                for track in online_targets:
-                    track.frame_id = frame_id
-                    if not success or track.track_id not in light_track_id:
-                        pass
-                    else:
-                        light_id = light_track_id.index(track.track_id)
-                        new_bbox = bboxes[light_id]
-                        track.mean, track.covariance = \
-                            track.kalman_filter.update(track.mean, track.covariance, track.tlwh_to_xyah(new_bbox))
+                if args.light:
+                    for track in online_targets:
+                        track.frame_id = frame_id
+                        if not success or track.track_id not in light_track_id:
+                            pass
+                        else:
+                            light_id = light_track_id.index(track.track_id)
+                            new_bbox = bboxes[light_id]
+                            track.mean, track.covariance = \
+                                track.kalman_filter.update(track.mean, track.covariance, track.tlwh_to_xyah(new_bbox))
 
                 # print(f"online_targets:\n\t{online_targets}")
 
@@ -267,6 +272,9 @@ def frame_sampler(source, path, predictor, vis_folder, args, exp):
                         online_scores.append(t.score)
                         online_class_id.append(t.class_id)
                         detection_results[frame_id][t.track_id] = list(t.tlwh)
+
+                        print(
+                            f"{frame_id},{t.track_id},{t.tlwh[0]},{t.tlwh[1]},{t.tlwh[2]},{t.tlwh[3]},{t.score},-1,-1,-1")
                 online_im = plot_tracking(
                     image=img_info['raw_img'], tlwhs=online_tlwhs, obj_ids=online_ids, online_class_id=online_class_id,
                     frame_id=frame_id + 1, fps=fps, scores=online_scores, class_names=cls_names
@@ -288,16 +296,16 @@ def frame_sampler(source, path, predictor, vis_folder, args, exp):
         else:
             break
     video_end = time.time()
-    print(f"video processing time is {video_end - video_start}")
+    # print(f"video processing time is {video_end - video_start}")
 
     cap.release()
     cv2.destroyAllWindows()
 
-    print("Dump detection results.")
-    out_file = open(f"{os.path.basename(args.path).split('.')[0]}.json", "w")
-    json.dump(detection_results, out_file, indent=6)
-    out_file.close()
-    print("Complete dumping.")
+    # print("Dump detection results.")
+    # out_file = open(f"{os.path.basename(args.path).split('.')[0]}.json", "w")
+    # json.dump(detection_results, out_file, indent=6)
+    # out_file.close()
+    # print("Complete dumping.")
 
 
 if __name__ == '__main__':
@@ -317,6 +325,8 @@ if __name__ == '__main__':
     parser.add_argument("--legacy", dest="legacy", default=False, action="store_true",
                         help="To be compatible with older versions")
     parser.add_argument("--trt", action="store_true",
+                        help="Whether use TensorRT acceleration")
+    parser.add_argument("--light", action="store_true",
                         help="Whether use TensorRT acceleration")
     # tracking arg
     parser.add_argument("--track_thresh", type=float, default=0.5, help="tracking confidence threshold")
