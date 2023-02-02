@@ -70,12 +70,14 @@ def start_process(source, path, predictor, vis_folder, args):
         ret_val, frame = cap.read()
         if ret_val:
             # for mota measurement purpose
+            print(f"==========================================frame {frame_id}=============================================")
             if frame_id not in detection_result.keys():
                 detection_result[frame_id]={}
             
             img_info["raw_img"] = frame
 
             if frame_id % detection_rate == 1:
+                print(">>>>>>>>>>> fuse detect")
                 det_start = time.time()
                 light_multi_tracker.clear()
                 light_multi_tracker = cv2.MultiTracker_create()
@@ -94,6 +96,7 @@ def start_process(source, path, predictor, vis_folder, args):
                     light_tracker_id = []
 
                     for idx_t, t in enumerate(online_targets):
+                        t.last_detected_frame = frame_id
                         tlwh = t.tlwh
                         tid = t.track_id
                         tlbr = np.asarray(tlwh).copy()
@@ -119,9 +122,9 @@ def start_process(source, path, predictor, vis_folder, args):
 
                     for each in light_tracker_list:
                         light_multi_tracker.add(cv2.TrackerMedianFlow_create(), frame, each)
-                    
-                    cluster_dic, cluster_num = dbscan_clustering(online_targets)
-                    detection_rate = detection_rate_adjuster(cluster_dic, cluster_num)
+                    if len(online_targets) !=0 :
+                        cluster_dic, cluster_num = dbscan_clustering(online_targets)
+                        detection_rate = detection_rate_adjuster(cluster_dic, cluster_num)
 
                     online_im = plot_tracking(
                         image=img_info['raw_img'], tlwhs=online_tlwhs, obj_ids=online_ids, online_class_id=online_class_id, frame_id=frame_id + 1, fps=fps, scores=online_scores, class_names = COCO_CLASSES
@@ -131,7 +134,7 @@ def start_process(source, path, predictor, vis_folder, args):
                     online_im = img_info['raw_img']
 
             else:
-
+                print(f">>>>>>> track")
                 track_start = time.time()
                 # for mota purpose
                 if frame_id not in detection_result.keys():
@@ -140,10 +143,12 @@ def start_process(source, path, predictor, vis_folder, args):
                 if len(predicted_bbox) != 0:
                     
                     predict_bbox = []
-                    if frame_id <= 1: # update three frames with light tracker to get the kalman filter upd
+                  #  print(f"light track id:{light_tracker_id}" )
+                    if frame_id % detection_rate <= 3: # update three frames with light tracker to get the kalman filter upd
                         light_track_ok, light_track_bbox = light_multi_tracker.update(frame)
                     else:
                         light_track_ok = False
+                  #  print(f"light_track_ok: {light_track_ok}")
 
                     tk_start = time.time()
                     for idx, each_track in enumerate(online_targets):
@@ -212,7 +217,7 @@ def start_process(source, path, predictor, vis_folder, args):
 
             if args.save_result:
                 vid_writer.write(online_im)
-               # cv2.imwrite(f'/home/dcsl/Documents/Video_Colab/imgs/{frame_id}.png', online_im)
+                cv2.imwrite(f'/data/Video_Colab/imgs/{frame_id-1}.png', online_im)
                 pass
             else:
                 cv2.namedWindow("yolox", cv2.WINDOW_NORMAL)
@@ -239,7 +244,7 @@ if __name__ == '__main__':
     parser.add_argument('-p', "--path", type=str, default=None, help="choose a video")
     parser.add_argument("-m", "--model", type=str, default=None, help="model name")
     parser.add_argument("-c", "--ckpt", default=None, type=str, help="ckpt for eval")
-    parser.add_argument("--conf", default=0.3, type=float, help="test conf")
+    parser.add_argument("--conf", default=0.4, type=float, help="test conf")
     parser.add_argument("--nms", default=0.3, type=float, help="test nms threshold")
     parser.add_argument("--tsize", default=None, type=int, help="test img size")
     parser.add_argument("--save_result", action="store_true", help="whether to save the inference result of image/video")

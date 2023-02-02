@@ -231,7 +231,7 @@ def dbscan_clustering(online_targets):
 # Dynamic_rate adjuster to accomodate the process quality 
 def detection_rate_adjuster(cluster_dic, cluster_num):
     if cluster_num > 0 :
-        detection_rate = 5
+        detection_rate = 8
     else:
         detection_rate = 10
     return detection_rate

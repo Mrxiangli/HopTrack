@@ -37,6 +37,7 @@ class STrack(BaseTrack):
         self.tracklet_len = 0
         self.color_dist = None
         self.dist_threshold = None
+        self.last_detected_frame = None
 
     def predict(self):
         mean_state = self.mean.copy()
@@ -76,6 +77,7 @@ class STrack(BaseTrack):
         self.state = TrackState.Tracked
         self.is_activated = True
         self.frame_id = frame_id
+        self._tlwh = new_track._tlwh
         if new_id:
             self.track_id = self.next_id()
         self.score = new_track.score
@@ -91,7 +93,7 @@ class STrack(BaseTrack):
         self.frame_id = frame_id
         self.tracklet_len += 1
 
-        new_tlwh = new_track.tlwh
+        new_tlwh = new_track._tlwh
         self._tlwh = new_tlwh
         self.mean, self.covariance = self.kalman_filter.update(
             self.mean, self.covariance, self.tlwh_to_xyah(new_tlwh))
@@ -99,6 +101,7 @@ class STrack(BaseTrack):
         self.is_activated = True
         self.class_id = int(new_track.class_id)
         self.score = new_track.score
+        self.last_detected_frame = frame_id
 
     @property
     def tlwh(self):
@@ -195,13 +198,11 @@ class HOPTracker(object):
         else:
             detections = []
 
-        unconfirmed = []
+        unconfirmed = []            #
         tracked_tracks = []         # keep track of the activated tracks in the current fusion
 
         for track in self.tracked_stracks:
-            if not track.is_activated:
-                unconfirmed.append(track)
-            else:
+            if track.is_activated:
                 tracked_tracks.append(track)
 
         # IoU based association -> may run wasserstain distance check to make sure no cross association happened
@@ -211,6 +212,9 @@ class HOPTracker(object):
         STrack.multi_predict(strack_pool)
         dists = matching.iou_distance(strack_pool, detections)
         matches, u_track, u_detection = matching.linear_assignment(dists, thresh=self.args.match_thresh)
+        track_listing(strack_pool)
+        track_listing(detections)
+        print(matches)
 
         # associate the tracks in the high score detection with the existing tracks
         unmatch_high_det = []
@@ -224,72 +228,20 @@ class HOPTracker(object):
             wass_g = wasserstein_distance( hist_g, track.color_dist[1])
             wass_r = wasserstein_distance( hist_r, track.color_dist[2])
 
-            if (wass_b + wass_g + wass_r)/3 < 0.5:
+            if (wass_b + wass_g + wass_r)/3 < 0.3:
                 if track.state == TrackState.Tracked:
                     track.update(detections[idet], self.frame_id)
                     activate_tracks.append(track)
                 else:
                     track.re_activate(det, self.frame_id, new_id=False)
                     refind_stracks.append(track)
+                 #   print(">>>>>>>>>> refind tracks")
+                 #   track_listing(refind_stracks)
             else:
                 unmatch_high_det.append(det)
                 unmatch_high_track.append(track)
     
         """ Need to run an additional wassertain distance for unmatched object from high confidence: the case that involved large displacement"""
-
-
-        """ not sure if this is needed, need further testing """
-        detections = [detections[i] for i in u_detection]
-        for each in unmatch_high_det:
-            detections.append(each)
-        dists = matching.iou_distance(unconfirmed, detections)
-        matches, u_unconfirmed, u_detection = matching.linear_assignment(dists, thresh=0.7)
-        for itracked, idet in matches:
-            unconfirmed[itracked].update(detections[idet], self.frame_id)
-            activate_tracks.append(unconfirmed[itracked])
-
-        #before removing the unconfirmed track, try to perform an analysis of wassertein distance
-        detection_his = []
-        track_his= []
-        for it in u_detection:
-            u_det = detections[it]
-            top_x, top_y, tw, th = u_det._tlwh
-            hist_b, hist_g, hist_r = pixel_distribution(frame, int(top_x), int(top_y), int(tw), int(th))
-            detection_his.append([hist_b, hist_g, hist_r])
-        
-        """shouldn't use the current frame for the wassestin distance, should be the previous detection one"""
-        for it in u_unconfirmed:
-            unconfirmed_track = unconfirmed[it]
-            top_x, top_y, tw, th = unconfirmed_track._tlwh
-            hist_b, hist_g, hist_r = pixel_distribution(frame, int(top_x), int(top_y), int(tw), int(th))
-            track_his.append([hist_b, hist_g, hist_r])
-
-        matching_pair = []
-        for i, d_his in enumerate(detection_his):
-            tmp_match = -1
-            for j, t_his in enumerate(track_his):
-                tmp_best = 0
-                wass_b = wasserstein_distance(d_his[0], t_his[0])
-                wass_g = wasserstein_distance(d_his[1], t_his[1])
-                wass_r = wasserstein_distance(d_his[2], t_his[2])
-                if (wass_b + wass_g + wass_r)/3 < 0.5 and (wass_b + wass_g + wass_r)/3 > tmp_best:
-                    tmp_match = j
-                    tmo_best = (wass_b + wass_g + wass_r)/3
-            matching_pair.append((i,tmp_match))
-
-        for each_pair in matching_pair:
-            if each_pair[1] != -1:
-                unconfirmed[each_pair[0]].update(detections[each_pair[1]], self.frame_id)
-                u_unconfirmed.pop(each_pair[0])     
-                u_detection.pop(each_pair[1])
-
-        # for remaining unmatched tracks, remove them from the tracks    
-
-        for it in u_unconfirmed:
-            track = unconfirmed[it]
-            track.mark_removed()
-            removed_stracks.append(track)
-
 
         # initiating new tracks for new objects
         tmp_active=[]
@@ -306,7 +258,7 @@ class HOPTracker(object):
         # find the un matched tracks
         rem_tracks = [strack_pool[i] for i in u_track]
         for each in unmatch_high_track:
-            rem_track.append(each)
+            rem_tracks.append(each)
 
         # find the unmatched detections with high detection scores
         detections = tmp_active                                     # detections not matched with IoU or unconfirmed
@@ -321,6 +273,7 @@ class HOPTracker(object):
                     # the detections are new tracks in this case, the last 4 states of KF are initialized
                     if abs(detections[each].mean[4]<0.0001) and abs(detections[each].mean[5]<0.0001) and abs(detections[each].mean[6]<0.0001) and abs(detections[each].mean[7]<0.0001):
                         ot_x, ot_y, ot_w, ot_h = rem_tracks[idx]._tlwh
+                        last_detected_frame = rem_tracks[idx].last_detected_frame
                         rem_tracks[idx].update(detections[each],self.frame_id)
                         # since the high speed objects and the new detection has low ious, it was treated as two seperated objects initially and both will has 0 for last 4 kalman states,
                         nd_x, nd_y, nd_w, nd_h = detections[each]._tlwh
@@ -328,11 +281,12 @@ class HOPTracker(object):
                         old_center_y = ot_y + ot_h/2
                         new_center_x = nd_x + nd_w/2
                         new_center_y = nd_y + nd_h/2
-                        new_vx = (new_center_x - old_center_x) # cuz we have 10 frames in the middle, need to change correspondingly
-                        new_vy = (new_center_y - old_center_y) # keep 7 for the traffic video test
-                        rem_tracks[idx].mean[4] = new_vx  
-                        rem_tracks[idx].mean[5] = new_vy
+                        new_vx = (new_center_x - old_center_x)/(self.frame_id - last_detected_frame) # divided by the lost number of frames: could reinit last 4 kf state with 0, so it reinit to medianflow
+                        new_vy = (new_center_y - old_center_y)/(self.frame_id - last_detected_frame) # 
+                        rem_tracks[idx].mean[4] = (rem_tracks[idx].mean[4]+new_vx)/2                # running average
+                        rem_tracks[idx].mean[5] = (rem_tracks[idx].mean[5]+ new_vy)/2
                         activate_tracks.append(rem_tracks[idx])
+                        print(f"matched track: {rem_tracks[idx].track_id} ")
 
             # mark the rest of tracks as lost tracks, need to move to later section
             for idx, each in enumerate(tmp_match):          
@@ -353,8 +307,8 @@ class HOPTracker(object):
             # if not match, all remaing track are lost tracks
             for each in rem_tracks:          
                 if not each.state == TrackState.Lost:
-                    track.mark_lost()
-                    lost_stracks.append(track)         
+                    each.mark_lost()
+                    lost_stracks.append(each)         
 
         """ Step 5: Update state"""
         for track in self.lost_stracks:
@@ -371,7 +325,9 @@ class HOPTracker(object):
         self.removed_stracks.extend(removed_stracks)
         self.tracked_stracks, self.lost_stracks = remove_duplicate_stracks(self.tracked_stracks, self.lost_stracks)
         output_stracks = [track for track in self.tracked_stracks if (track.is_activated and (track.class_id == 0 or track.class_id == 1 or track.class_id == 2))]
-        
+        print("<<<<<<<<<<<<<<<<< Lost tracks ")
+        track_listing(self.lost_stracks)
+
         return output_stracks
 
     def hopping_update(self, output_results, img_info, img_size):
@@ -400,13 +356,10 @@ class HOPTracker(object):
         else:
             detections = []
 
-        unconfirmed = []
         tracked_tracks = []  # type: list[STrack]
 
         for track in self.tracked_stracks:
-            if not track.is_activated:
-                unconfirmed.append(track)
-            else:
+            if track.is_activated:
                 tracked_tracks.append(track)
 
         # association based on kalman filter predicted position, theorectically they should align
@@ -428,6 +381,8 @@ class HOPTracker(object):
             else:
                 track.re_activate(det, self.frame_id, new_id=False)
                 refind_stracks.append(track)
+                print(">>>>>>>>>>>>>>>>>refind tracks")
+                track_listing(refind_stracks)
 
         detections = [detections[i] for i in u_detection]
         r_tracked_stracks = [strack_pool[i] for i in u_track if strack_pool[i].state == TrackState.Tracked]
@@ -491,6 +446,20 @@ class HOPTracker(object):
         self.tracked_stracks = [t for t in self.tracked_stracks if t.state == TrackState.Tracked]
         self.tracked_stracks = joint_stracks(self.tracked_stracks, activate_tracks)
         self.tracked_stracks = joint_stracks(self.tracked_stracks, refind_stracks)
+        # it is possible that for some tracks they 
+        if self.frame_id % 10  == 2:
+            for each in self.tracked_stracks:
+                t_x, t_y, t_w, t_h = each._tlwh
+                t_hist_b, t_hist_g, t_hist_r = pixel_distribution(frame, int(t_x), int(t_y), int(t_w), int(t_h))
+                wass_b = wasserstein_distance(each.color_dist[0], t_hist_b)
+                wass_g = wasserstein_distance(each.color_dist[1], t_hist_g)
+                wass_r = wasserstein_distance(each.color_dist[2], t_hist_r)
+                average_wass = (wass_b + wass_g + wass_r)/3
+
+                if average_wass > 0.1:          # this should be a tuenable parameter based on the object characteristic
+                    each.mark_lost()
+                    lost_stracks.append(each)
+
         self.lost_stracks = sub_stracks(self.lost_stracks, self.tracked_stracks)
         self.lost_stracks.extend(lost_stracks)
         self.lost_stracks = sub_stracks(self.lost_stracks, self.removed_stracks)
@@ -565,4 +534,10 @@ def trajectory_finder(track):
     tl_y_new = int(tl_y + y_dir * y_dis)
 
     return int(tl_x_new), int(tl_y_new), int(width), int(height)
+
+def track_listing(tk_list):
+    if len(tk_list) != 0:
+        for each in tk_list:
+            print(f"{each.track_id},{each.tlwh[0]},{each.tlwh[1]},{each.tlwh[2]},{each.tlwh[3]}, latest det: {each.last_detected_frame}")  
+    print("^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^")
 
