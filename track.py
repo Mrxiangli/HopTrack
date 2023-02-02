@@ -195,7 +195,7 @@ def frame_sampler(source, path, predictor, vis_folder, args, exp):
             img_info["width"] = width
             img_info["raw_img"] = frame
 
-            if frame_id % 10 == 1:
+            if frame_id % 8 == 1:
                 light_track_id = []
                 multiTracker = cv2.MultiTracker_create()
 

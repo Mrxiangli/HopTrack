@@ -6,4 +6,6 @@ __pycache__/*
 *.onnx
 *.pyc
 *.tar
+*.txt
+*.csv
 .DS_Store
