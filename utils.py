@@ -19,7 +19,9 @@ from yolox.utils import fuse_model, get_model_info, postprocess, vis
 from yolox.models import YOLOX, YOLOPAFPN, YOLOXHead
 
 import sys
-sys.path.insert(0, '/data/yolov5')
+# for yolov5 detector support
+yolov5_dir = "/".join(os.getcwd().split('/')[:-1])+"/yolov5"
+sys.path.insert(0, yolov5_dir)
 
 from models.common import DetectMultiBackend
 from utils_yolov5.dataloaders import IMG_FORMATS, VID_FORMATS, LoadImages, LoadScreenshots, LoadStreams
@@ -231,9 +233,9 @@ def dbscan_clustering(online_targets):
 # Dynamic_rate adjuster to accomodate the process quality 
 def detection_rate_adjuster(cluster_dic, cluster_num):
     if cluster_num > 0 :
-        detection_rate = 8
+        detection_rate = 7
     else:
-        detection_rate = 10
+        detection_rate = 8
     return detection_rate
 
 # enable trail run when needed for GPU preheat!

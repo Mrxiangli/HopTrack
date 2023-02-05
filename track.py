@@ -13,7 +13,8 @@ import pycuda.driver as cuda
 import pycuda.autoinit
 import warnings
 
-sys.path.insert(0, '/data/Video_Colab')
+# add current folder into path
+sys.path.insert(0, "/".join(os.getcwd().split('/')[:-1]))
 
 import cv2
 import torch
@@ -64,20 +65,20 @@ def start_process(source, path, predictor, vis_folder, args):
     img_info = {}
     img_info["height"] = height
     img_info["width"] = width
-    detection_rate = 10
+    detection_rate = 8
 
     while True:
         ret_val, frame = cap.read()
         if ret_val:
             # for mota measurement purpose
-            print(f"==========================================frame {frame_id}=============================================")
+           # print(f"==========================================frame {frame_id}=============================================")
             if frame_id not in detection_result.keys():
                 detection_result[frame_id]={}
             
             img_info["raw_img"] = frame
 
             if frame_id % detection_rate == 1:
-                print(">>>>>>>>>>> fuse detect")
+           #     print(">>>>>>>>>>> fuse detect")
                 det_start = time.time()
                 light_multi_tracker.clear()
                 light_multi_tracker = cv2.MultiTracker_create()
@@ -104,8 +105,11 @@ def start_process(source, path, predictor, vis_folder, args):
                         tlbr=np.append(tlbr,[t.score, t.class_id])
                         tlbr=np.append(tlbr,[tid,t.mean])
                         predicted_bbox.append(tlbr)
+                       
                         hist_b, hist_g, hist_r = pixel_distribution(frame, int(t.tlwh[0]), int(t.tlwh[1]), int(t.tlwh[2]), int(t.tlwh[3]))
+                        
                         t.color_dist = [hist_b, hist_g, hist_r]
+
                         if tlwh[2] * tlwh[3] > args.min_box_area: 
                             online_tlwhs.append(tlwh)
                             online_ids.append(tid)
@@ -134,7 +138,7 @@ def start_process(source, path, predictor, vis_folder, args):
                     online_im = img_info['raw_img']
 
             else:
-                print(f">>>>>>> track")
+            #    print(f">>>>>>> track")
                 track_start = time.time()
                 # for mota purpose
                 if frame_id not in detection_result.keys():
@@ -154,7 +158,7 @@ def start_process(source, path, predictor, vis_folder, args):
                     for idx, each_track in enumerate(online_targets):
                         
                         # check if the bbox is in the light_tracker_list -> new track or reinitiated track 
-                        if light_track_ok and each_track.track_id in light_tracker_id:
+                        if light_track_ok and each_track.track_id in light_tracker_id and len(light_track_bbox)!=0:
                             light_id = light_tracker_id.index(each_track.track_id)
                             new_bbox = light_track_bbox[light_id]
                             predict_bbox.append([new_bbox[0], new_bbox[1], new_bbox[2]+new_bbox[0], new_bbox[3]+new_bbox[1], predicted_bbox[idx][4], predicted_bbox[idx][5]])
@@ -217,7 +221,8 @@ def start_process(source, path, predictor, vis_folder, args):
 
             if args.save_result:
                 vid_writer.write(online_im)
-                cv2.imwrite(f'/data/Video_Colab/imgs/{frame_id-1}.png', online_im)
+                
+             #   cv2.imwrite(os.getcwd()+"/imgs/"+str(frame_id-1)+".png", online_im)
                 pass
             else:
                 cv2.namedWindow("yolox", cv2.WINDOW_NORMAL)
@@ -253,7 +258,7 @@ if __name__ == '__main__':
     parser.add_argument("--fuse",dest="fuse",default=False,action="store_true",help="Fuse conv and bn for testing.")
     parser.add_argument("--mot",dest="mot",default=False,action="store_true",help="Fuse conv and bn for testing.")
     # tracking arg
-    parser.add_argument("--track_thresh", type=float, default=0.5, help="tracking confidence threshold")
+    parser.add_argument("--track_thresh", type=float, default=0.4, help="tracking confidence threshold")
     parser.add_argument("--track_buffer", type=int, default=30, help="the frames for keep lost tracks")
     parser.add_argument("--match_thresh", type=float, default=0.7, help="matching threshold for tracking")
     parser.add_argument("--aspect_ratio_thresh", type=float, default=1.6, help="threshold for filtering out boxes of which aspect ratio are above the given value.")

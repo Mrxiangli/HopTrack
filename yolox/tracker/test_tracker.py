@@ -36,11 +36,9 @@ class STrack(BaseTrack):
         self.score = score
         self.tracklet_len = 0
         self.color_dist = None
-        self.dist_threshold = None
         self.last_detected_frame = None
         self.last_frame = None
-        self.paired = False
-        self.tmp_active = False
+
 
     def predict(self):
         mean_state = self.mean.copy()
@@ -80,7 +78,7 @@ class STrack(BaseTrack):
         self.state = TrackState.Tracked
         self.is_activated = True
         self.frame_id = frame_id
-        self._tlwh = new_track._tlwh.copy()
+        self._tlwh = new_track._tlwh
         if new_id:
             self.track_id = self.next_id()
         self.score = new_track.score
@@ -96,14 +94,15 @@ class STrack(BaseTrack):
         self.frame_id = frame_id
         self.tracklet_len += 1
 
-
-        self._tlwh = new_track._tlwh.copy()
+        new_tlwh = new_track._tlwh
+        self._tlwh = new_tlwh
         self.mean, self.covariance = self.kalman_filter.update(
-            self.mean, self.covariance, self.tlwh_to_xyah(new_track._tlwh))
+            self.mean, self.covariance, self.tlwh_to_xyah(new_tlwh))
         self.state = TrackState.Tracked
         self.is_activated = True
         self.class_id = int(new_track.class_id)
         self.score = new_track.score
+        self.last_detected_frame = frame_id
     
 
     def rebond(self, new_track, frame_id):
@@ -174,21 +173,23 @@ class STrack(BaseTrack):
 
 class HOPTracker(object):
     def __init__(self, args, frame_rate=30):
-        self.args = args
         self.tracked_stracks = []   # type: list[STrack], include all tracks thats not removed
         self.lost_stracks = []      # type: list[STrack], include lost tracks
         self.removed_stracks = []   # type: list[STrack], include tracks removed 
+
         self.frame_id = 0
+        self.args = args
         self.buffer_size = int(frame_rate / 30.0 * args.track_buffer)
         self.max_time_lost = self.buffer_size
         self.kalman_filter = KalmanFilter()
+
 
     def detect_track_fuse(self, output_results, img_info, img_size):
         self.frame_id += 1
         activate_tracks = []            # keep track of online tracks
         refind_stracks = []             # keep track of reactivatede tracks
         lost_stracks = []               # keep track of lost tracks
-        removed_stracks = []            # keep track of removed 
+        removed_stracks = []            # keep track of removed tracks
    
         # output result are the most recent detection result from DNN
         output_results = output_results.cpu().numpy()
@@ -222,69 +223,63 @@ class HOPTracker(object):
             if track.is_activated:
                 tracked_tracks.append(track)
 
-        """ Similar to Bytetrack, perform one high detection match"""
-        # IoU based association 
+        # IoU based association -> may run wasserstain distance check to make sure no cross association happened
         strack_pool = joint_stracks(tracked_tracks, self.lost_stracks)
 
         # Predict the current location with KF
         STrack.multi_predict(strack_pool)
         dists = matching.iou_distance(strack_pool, detections)
-        matches, u_track, u_detection = matching.linear_assignment(dists, thresh=0.5)
-     #   track_listing(strack_pool)
-     #   track_listing(detections)
-    #    print(matches)
-        # print(u_track)
+        matches, u_track, u_detection = matching.linear_assignment(dists, thresh=self.args.match_thresh)
+        track_listing(strack_pool)
+        track_listing(detections)
+        print(matches)
+
+        test_track = STrack([0,0,0,0], 0, -1)
+
 
         # associate the tracks in the high score detection with the existing tracks
-        # unmatch_high_det = []
-        # unmatch_high_track = []
+        unmatch_high_det = []
+        unmatch_high_track = []
         for itracked, idet in matches:
             track = strack_pool[itracked]
             det = detections[idet]
-            """ This 0.3 need to be tuned for individual video"""
-            # if True:  
-            if track.state == TrackState.Tracked:
-              #  print(f"update: {track.track_id}")
-                area_of_interest = frame[int(det.tlwh[1]):int(det.tlwh[1]+det.tlwh[3]), int(det.tlwh[0]):int(det.tlwh[0]+det.tlwh[2])]
-                track.last_frame = area_of_interest
-                track.update(detections[idet], self.frame_id)
-                activate_tracks.append(track)
+            top_x, top_y, tw, th = det._tlwh
+            hist_b, hist_g, hist_r = pixel_distribution(frame, int(top_x), int(top_y), int(tw), int(th))
+            wass_b = wasserstein_distance( hist_b, track.color_dist[0])
+            wass_g = wasserstein_distance( hist_g, track.color_dist[1])
+            wass_r = wasserstein_distance( hist_r, track.color_dist[2])
 
+            if track.state == TrackState.Tracked:
+                track.update(detections[idet], self.frame_id)
+                track.rebond(test_track, self.frame_id)
+                print(f"track : {track.track_id}")
+                activate_tracks.append(track)
             else:
-                area_of_interest = frame[int(det.tlwh[1]):int(det.tlwh[1]+det.tlwh[3]), int(det.tlwh[0]):int(det.tlwh[0]+det.tlwh[2])]
-                track.last_frame = area_of_interest
                 track.re_activate(det, self.frame_id, new_id=False)
                 refind_stracks.append(track)
-      #  track_listing(activate_tracks)  
+                 #   print(">>>>>>>>>> refind tracks")
+        track_listing(activate_tracks)
     
-        """Initiating temporary new tracks for unmatched detection objects, perform trajectory finding"""
+        """ Need to run an additional wassertain distance for unmatched object from high confidence: the case that involved large displacement"""
 
-
+        # initiating new tracks for new objects
+        tmp_active=[]
         for inew in u_detection:
             track = detections[inew]
             if track.score < 0.35:
                 continue
             track.activate(self.kalman_filter, self.frame_id)
-            area_of_interest = frame[int(track.tlwh[1]):int(track.tlwh[1]+track.tlwh[3]), int(track.tlwh[0]):int(track.tlwh[0]+track.tlwh[2])]
-            track.last_frame = area_of_interest
-            #print(f"create track: {track.track_id} {track._tlwh}")
-            track.tmp_active = True
-
-        tmp_active = [detections[inew] for inew in u_detection if detections[inew].tmp_active]
+            tmp_active.append(track)
             
 
         """ matching new track with fast moving object"""
         # matching the fast moving objects:
-        # find the unmatched tracks
+        # find the un matched tracks
         rem_tracks = [strack_pool[i] for i in u_track]
-        
-       # track_listing(rem_tracks)
+        for each in unmatch_high_track:
+            rem_tracks.append(each)
 
-        # unmatched after pixel based finder
-        was_unmatched_track = []
-        was_unmatched_det = []
-
-        """this is for the special cases an object is detected in the previous detect fuse frame, but median flow fails to update,and no KF state update, thus purely rely on pixel based distribution """
+        # find the unmatched detections with high detection scores
         detections = tmp_active                                     # detections not matched with IoU or unconfirmed
         dist = matching.iou_distance(rem_tracks, tmp_active)
         if dist.size != 0:
@@ -292,214 +287,65 @@ class HOPTracker(object):
             for idx, each in enumerate(tmp_match):
                 if dist[idx][each]==1:
                     tmp_match[idx]=-1
-           # print(f"tmp match {tmp_match}")
-           # tmp_match_print(tmp_match, rem_tracks, tmp_active)
-            matched_det = []
             for idx, each in enumerate(tmp_match):
-               # print(f"------------track id : {rem_tracks[idx].track_id}")
-               # print(f"----->>>>> each:{each}")
-                if each != -1 :
+                if each != -1:
                     # the detections are new tracks in this case, the last 4 states of KF are initialized
                     if abs(detections[each].mean[4]<0.0001) and abs(detections[each].mean[5]<0.0001) and abs(detections[each].mean[6]<0.0001) and abs(detections[each].mean[7]<0.0001):
-
                         ot_x, ot_y, ot_w, ot_h = rem_tracks[idx]._tlwh
                         last_detected_frame = rem_tracks[idx].last_detected_frame
-                        if np.any(rem_tracks[idx]._tlwh<0):# or (ot_x+ot_w)>img_w or (ot_y+ot_h>img_h):
-                            continue
-                        d_x,d_y, dw, dh = detections[each]._tlwh
-                        if np.any(detections[each]._tlwh<0):# or (d_x+dw)>img_w or (d_y+dh>img_h):
-                            continue
-                        d_y_max = img_h if d_y+dh > img_h else d_y+dh
-                        d_x_max = img_w if d_x+dw > img_w else d_x+dw
-                        det_roi = frame[int(d_y):int(d_y_max), int(d_x):int(d_x_max)]
-                        det_roi = np.array(det_roi/(det_roi.mean()/rem_tracks[idx].last_frame.mean()),dtype=np.uint8)
-                        det_roi[det_roi>255] = 255
-                        quant_list_a = dynamic_chunks(det_roi,7,4)
-                        quant_list_b = dynamic_chunks(rem_tracks[idx].last_frame,7,4)
-
-                        image_partition_list_a = quantization(det_roi,quant_list_a,7,4)
-                        image_partition_list_b = quantization(rem_tracks[idx].last_frame,quant_list_b,7,4)
-                        WASS=my_wass(image_partition_list_a, image_partition_list_b, 7,4)
-                      #  print(rem_tracks[idx].track_id)
-                      #  print(WASS)
-                        if sum(WASS[:,1:3].flatten()<=0.20)>=8:
-                           # cv2.imwrite("new_detect.png", det_roi)
-                            #cv2.imwrite("lost_track_last_detect.png", rem_tracks[idx].last_frame)
-                            detections[each].track_id = rem_tracks[idx].track_id
-                            #rem_tracks[idx].update(detections[each],self.frame_id)
-                            area_of_interest = det_roi
-                            detections[each].last_frame = area_of_interest
-                            
-                            # since the high speed objects and the new detection has low ious, it was treated as two seperated objects initially and both will has 0 for last 4 kalman states,
-                            nd_x, nd_y, nd_w, nd_h = detections[each]._tlwh
-                            old_center_x = ot_x + ot_w/2
-                            old_center_y = ot_y + ot_h/2
-                            new_center_x = nd_x + nd_w/2
-                            new_center_y = nd_y + nd_h/2
-                            new_vx = (new_center_x - old_center_x)/(self.frame_id - last_detected_frame) # divided by the lost number of frames: could reinit last 4 kf state with 0, so it reinit to medianflow
-                            new_vy = (new_center_y - old_center_y)/(self.frame_id - last_detected_frame) # 
-                           # rem_tracks[idx].mean[4] = (rem_tracks[idx].mean[4]+new_vx)/2                # running average
-                            #rem_tracks[idx].mean[5] = (rem_tracks[idx].mean[5]+ new_vy)/2
-                            detections[each].mean[0] =  new_center_x
-                            detections[each].mean[1] =  new_center_y
-                            detections[each].mean[2] =  dw/dh
-                            detections[each].mean[3] =  dh
-                            detections[each].mean[4] = (rem_tracks[idx].mean[4]+new_vx)/2 
-                            detections[each].mean[5] = (rem_tracks[idx].mean[5]+new_vy)/2
-                            detections[each].mean[6] =  rem_tracks[idx].mean[6]
-                            detections[each].mean[7] =  rem_tracks[idx].mean[7]
-
-
-                            activate_tracks.append(detections[each])
-                            rem_tracks[idx].mark_removed()
-                         #   print(f"matched track: {rem_tracks[idx].track_id} ")
-                            matched_det.append(detections[each])
-                            detections[each].paired = True
-                        else:
-                            was_unmatched_track.append(rem_tracks[idx])
-                          #  print(f"track {rem_tracks[idx].track_id} added to wass un matched")
-                    else:
-                        was_unmatched_track.append(rem_tracks[idx])
-                       # print(f"track {rem_tracks[idx].track_id} added to wass un matched")
-                else:
-                    was_unmatched_track.append(rem_tracks[idx])
-                 #   print(f"track {rem_tracks[idx].track_id} added to wass un matched")
+                        rem_tracks[idx].update(detections[each],self.frame_id)
+                        # since the high speed objects and the new detection has low ious, it was treated as two seperated objects initially and both will has 0 for last 4 kalman states,
+                        nd_x, nd_y, nd_w, nd_h = detections[each]._tlwh
+                        old_center_x = ot_x + ot_w/2
+                        old_center_y = ot_y + ot_h/2
+                        new_center_x = nd_x + nd_w/2
+                        new_center_y = nd_y + nd_h/2
+                        new_vx = (new_center_x - old_center_x)/(self.frame_id - last_detected_frame) # divided by the lost number of frames: could reinit last 4 kf state with 0, so it reinit to medianflow
+                        new_vy = (new_center_y - old_center_y)/(self.frame_id - last_detected_frame) # 
+                        rem_tracks[idx].mean[4] = (rem_tracks[idx].mean[4]+new_vx)/2                # running average
+                        rem_tracks[idx].mean[5] = (rem_tracks[idx].mean[5]+ new_vy)/2
+                        activate_tracks.append(rem_tracks[idx])
+                        print(f"matched track: {rem_tracks[idx].track_id} ")
 
             # mark the rest of tracks as lost tracks, need to move to later section
-
-
             for idx, each in enumerate(tmp_match):          
                 if each == -1:
                     track = rem_tracks[idx]
-                    if track not in was_unmatched_track:
-                        was_unmatched_track.append(track)
-                        # print(f"track {track.track_id} added to wass un matched")
+                    if not track.state == TrackState.Lost:
+                        track.mark_lost()
+                        lost_stracks.append(track)
 
-            for idx, each in enumerate(tmp_active):  #if not in the match, no IoU at all
-                if each.paired == False:
-                   # activate_tracks.append(each)
-                    was_unmatched_det.append(each)   
-
+            for idx, each in enumerate(tmp_active):  #if not in the match, which means its a true new objects
+                if idx not in tmp_match or len(tmp_match)==0:
+                    activate_tracks.append(each)
         else:
-            # if no match which means all the newly not necessary
-
+            # if no match which means all the newly created tracks are new objects
             for idx, each in enumerate(tmp_active):
-               # activate_tracks.append(each)
-               was_unmatched_det.append(each) 
-            #    print(f"{each._tlwh}")
-            
-            # if not match, all remaining track are lost tracks
-            
-            for each in rem_tracks: 
-      
-                if not each.state == TrackState.Lost:
-                    #each.mark_lost()
-                    #lost_stracks.append(each)
-                    was_unmatched_track.append(each)   
-                    # print(f"track {track.track_id} marked lost")      
-
-
-
-        """trajectory based finding, exsiting traj with KF state"""
-        traj_KF = []
-        for each in was_unmatched_track:
-            if each.tracklet_len > 30 or self.frame_id < 60:  # the object is tracked more than 30 frames, so the KF should be fairly stable
-                if np.any(each._tlwh<=0):
-                    continue
-                traj_KF.append(each)
-             #   print(f"{each.track_id} added to trajectory finder")
-
-
-        matched_det_traj = []
-        matched_track_traj = []
-
-        for each_track in traj_KF:
-            # print(f"KF track: {each_track._tlwh}")
-            tmp_rank = []
-            for idx, each_det in enumerate(was_unmatched_det):
-                distance = trajectory_finder(each_track, each_det)
-                tmp_rank.append((distance, idx))
-                
-            tmp_rank.sort(key=lambda tmp_rank: tmp_rank[0])                 # sort based on distance rom low to high
-            plot_potential_match(self.frame_id, frame, was_unmatched_det, each_track, tmp_rank)
-            for i in range(len(tmp_rank)):
-                if was_unmatched_det[tmp_rank[i][1]].paired == False:
-                    potential_match = was_unmatched_det[tmp_rank[i][1]]
-                    d_x, d_y, dw, dh = potential_match._tlwh
-                #    print(f"match dim: {potential_match._tlwh}")
-                    if np.any(potential_match._tlwh<=0):# or (d_x+dw)>img_w or (d_y+dh>img_h):
-                        continue
-                    # print(f"track: {each_track.track_id}, mean: {each_track.last_frame.mean()}")
-                    d_y_max = img_h if d_y+dh > img_h else d_y+dh
-                    d_x_max = img_w if d_x+dw > img_w else d_x+dw
-                    det_roi = frame[int(d_y):int(d_y+dh), int(d_x):int(d_x+dw)]
-                    # print(f"det mean: {det_roi.mean()}")
-                    det_roi = np.array(det_roi/(det_roi.mean()/each_track.last_frame.mean()),dtype=np.uint8)
-                    det_roi[det_roi>255] = 255
-                    quant_list_a = dynamic_chunks(det_roi,7,3)
-                    quant_list_b = dynamic_chunks(each_track.last_frame,7,3)
-
-                    image_partition_list_a = quantization(det_roi,quant_list_a,7,3)
-                    image_partition_list_b = quantization(each_track.last_frame,quant_list_b,7,3)
-                    WASS=my_wass(image_partition_list_a, image_partition_list_b, 7,3)
-                 #   print(WASS)
-
-                    if sum(WASS[:,1]<=0.20)>=4:
-
-                        potential_match.track_id = each_track.track_id
-                        potential_match.last_frame = det_roi
-                        # sending it in to median flow for rein
-                        each_track.mean[4] = 0
-                        each_track.mean[5] = 0
-                        each_track.mean[6] = 0
-                        each_track.mean[7] = 0
-                        each_track.mark_removed()
-                        removed_stracks.append(each_track)
-                        activate_tracks.append(potential_match)
-
-                    # del was_unmatched_det[tmp_rank[i][1]]   # remove from unmatched det
-                        matched_det_traj.append(was_unmatched_det[tmp_rank[i][1]])
-                        matched_track_traj.append(each_track)
-                        break
-                    if i > 2:
-
-                        break
-
-        
-        for each in was_unmatched_det:                      # true new objects
-            if each.paired == False:
                 activate_tracks.append(each)
-
-        for each in was_unmatched_track:          
-            if not each.state == TrackState.Lost and each not in matched_track_traj :
-                each.mark_lost()
-                lost_stracks.append(each)
-
+            
+            # if not match, all remaing track are lost tracks
+            for each in rem_tracks:          
+                if not each.state == TrackState.Lost:
+                    each.mark_lost()
+                    lost_stracks.append(each)         
 
         """ Step 5: Update state"""
         for track in self.lost_stracks:
             if self.frame_id - track.end_frame > self.max_time_lost:
                 track.mark_removed()
                 removed_stracks.append(track)
-        # print(">>>>>>>>>>>>>>active tracks")
-        # track_listing(activate_tracks)
-        
-
 
         self.tracked_stracks = [t for t in self.tracked_stracks if t.state == TrackState.Tracked]
-
         self.tracked_stracks = joint_stracks(self.tracked_stracks, activate_tracks)
-        # print(">>>>>>>>>>>>>>s tracks")
-        # track_listing(self.tracked_stracks)
         self.tracked_stracks = joint_stracks(self.tracked_stracks, refind_stracks)
-
         self.lost_stracks = sub_stracks(self.lost_stracks, self.tracked_stracks)
         self.lost_stracks.extend(lost_stracks)
         self.lost_stracks = sub_stracks(self.lost_stracks, self.removed_stracks)
         self.removed_stracks.extend(removed_stracks)
         self.tracked_stracks, self.lost_stracks = remove_duplicate_stracks(self.tracked_stracks, self.lost_stracks)
         output_stracks = [track for track in self.tracked_stracks if (track.is_activated and (track.class_id == 0 or track.class_id == 1 or track.class_id == 2))]
-        
+        print("<<<<<<<<<<<<<<<<< Lost tracks ")
+        track_listing(self.lost_stracks)
 
         return output_stracks
 
@@ -542,7 +388,7 @@ class HOPTracker(object):
         STrack.multi_predict(strack_pool)
         dists = matching.iou_distance(strack_pool, detections)
 
-        matches, u_track, u_detection = matching.linear_assignment(dists, thresh=0.6)
+        matches, u_track, u_detection = matching.linear_assignment(dists, thresh=self.args.match_thresh)
 
         # associate the tracks in the high score detection with the existing tracks
         for itracked, idet in matches:
@@ -554,8 +400,8 @@ class HOPTracker(object):
             else:
                 track.re_activate(det, self.frame_id, new_id=False)
                 refind_stracks.append(track)
-                # print(">>>>>>>>>>>>>>>>>refind tracks")
-                # track_listing(refind_stracks)
+                print(">>>>>>>>>>>>>>>>>refind tracks")
+                track_listing(refind_stracks)
 
         detections = [detections[i] for i in u_detection]
         r_tracked_stracks = [strack_pool[i] for i in u_track if strack_pool[i].state == TrackState.Tracked]
@@ -619,6 +465,20 @@ class HOPTracker(object):
         self.tracked_stracks = [t for t in self.tracked_stracks if t.state == TrackState.Tracked]
         self.tracked_stracks = joint_stracks(self.tracked_stracks, activate_tracks)
         self.tracked_stracks = joint_stracks(self.tracked_stracks, refind_stracks)
+        # it is possible that for some tracks they 
+        if self.frame_id % 10  == 2:
+            for each in self.tracked_stracks:
+                t_x, t_y, t_w, t_h = each._tlwh
+                t_hist_b, t_hist_g, t_hist_r = pixel_distribution(frame, int(t_x), int(t_y), int(t_w), int(t_h))
+                wass_b = wasserstein_distance(each.color_dist[0], t_hist_b)
+                wass_g = wasserstein_distance(each.color_dist[1], t_hist_g)
+                wass_r = wasserstein_distance(each.color_dist[2], t_hist_r)
+                average_wass = (wass_b + wass_g + wass_r)/3
+
+                if average_wass > 0.1:          # this should be a tuenable parameter based on the object characteristic
+                    each.mark_lost()
+                    lost_stracks.append(each)
+
         self.lost_stracks = sub_stracks(self.lost_stracks, self.tracked_stracks)
         self.lost_stracks.extend(lost_stracks)
         self.lost_stracks = sub_stracks(self.lost_stracks, self.removed_stracks)
@@ -629,6 +489,9 @@ class HOPTracker(object):
 
         return output_stracks
 
+
+
+""" useful tools """
 
 def joint_stracks(tlista, tlistb):
     exists = {}
@@ -807,4 +670,4 @@ def plot_potential_match(frame_id, frame, det, orig_track, tmp_rank):
     bx = int(roi[0]+roi[2])
     by = int(roi[1]+roi[3])
     img = cv2.rectangle(img, (tx, ty), (bx, by), (255,255,255), 4)
-
+    cv2.imwrite(f"frame_{frame_id}_{orig_track.track_id}_potential_match.png", img)
