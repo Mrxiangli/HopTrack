@@ -65,13 +65,13 @@ def start_process(source, path, predictor, vis_folder, args):
     img_info = {}
     img_info["height"] = height
     img_info["width"] = width
-    detection_rate = 8
+    detection_rate = 9
 
     while True:
         ret_val, frame = cap.read()
         if ret_val:
             # for mota measurement purpose
-           # print(f"==========================================frame {frame_id}=============================================")
+            #print(f"==========================================frame {frame_id}=============================================")
             if frame_id not in detection_result.keys():
                 detection_result[frame_id]={}
             
@@ -222,7 +222,7 @@ def start_process(source, path, predictor, vis_folder, args):
             if args.save_result:
                 vid_writer.write(online_im)
                 
-             #   cv2.imwrite(os.getcwd()+"/imgs/"+str(frame_id-1)+".png", online_im)
+                #cv2.imwrite(os.getcwd()+"/imgs/"+str(frame_id-1)+".png", online_im)
                 pass
             else:
                 cv2.namedWindow("yolox", cv2.WINDOW_NORMAL)

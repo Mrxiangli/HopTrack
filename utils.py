@@ -235,7 +235,7 @@ def detection_rate_adjuster(cluster_dic, cluster_num):
     if cluster_num > 0 :
         detection_rate = 7
     else:
-        detection_rate = 8
+        detection_rate = 9
     return detection_rate
 
 # enable trail run when needed for GPU preheat!

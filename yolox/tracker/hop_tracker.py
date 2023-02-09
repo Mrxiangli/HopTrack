@@ -6,6 +6,10 @@ import copy
 import torch
 import torch.nn.functional as F
 import cv2
+import numba as nb
+from numba import jit
+import time
+
 
 from .kalman_filter import KalmanFilter
 from yolox.tracker import matching
@@ -149,6 +153,8 @@ class HOPTracker(object):
         self.buffer_size = int(frame_rate / 30.0 * args.track_buffer)
         self.max_time_lost = self.buffer_size
         self.kalman_filter = KalmanFilter()
+        self.fuse_ct = 0
+        self.fuse_time = 0
 
     def detect_track_fuse(self, output_results, img_info, img_size):
         self.frame_id += 1
@@ -156,7 +162,9 @@ class HOPTracker(object):
         refind_stracks = []             # keep track of reactivatede tracks
         lost_stracks = []               # keep track of lost tracks
         removed_stracks = []            # keep track of removed 
-   
+
+
+        start_time = time.time()
         # output result are the most recent detection result from DNN
         output_results = output_results.cpu().numpy()
         scores = output_results[:, 4]
@@ -196,7 +204,10 @@ class HOPTracker(object):
         # Predict the current location with KF and perform linear assignment
         STrack.multi_predict(strack_pool)
         dists = matching.iou_distance(strack_pool, detections)
-        matches, u_track, u_detection = matching.linear_assignment(dists, thresh=0.5)
+        matches, u_track, u_detection = matching.linear_assignment(dists, thresh=0.50)
+       # track_listing(strack_pool,"track_pool")
+      #  track_listing(detections,"new_detections")
+      #  print(matches)
 
         for itracked, idet in matches:
             track = strack_pool[itracked]
@@ -224,6 +235,7 @@ class HOPTracker(object):
         
         # tmp_active contains the track created on new detections, thats not matched in the beigining
         tmp_active = [detections[inew] for inew in u_detection if detections[inew].tmp_active]
+       # track_listing(tmp_active,"tmp-active")
             
         """ matching new track with fast moving object"""
         # matching the fast moving objects:
@@ -267,17 +279,19 @@ class HOPTracker(object):
                         det_roi = np.array(det_roi/(det_roi.mean()/rem_tracks[idx].last_frame.mean()),dtype=np.uint8)
                         det_roi[det_roi>255] = 255
                         # perform quantization
-                        quant_list_a = dynamic_chunks(det_roi,7,4)
-                        quant_list_b = dynamic_chunks(rem_tracks[idx].last_frame,7,4)
+                        quant_list_a = dynamic_chunks(det_roi,4,3)
+                        quant_list_b = dynamic_chunks(rem_tracks[idx].last_frame,4,3)
 
-                        image_partition_list_a = quantization(det_roi,quant_list_a,7,4)
-                        image_partition_list_b = quantization(rem_tracks[idx].last_frame,quant_list_b,7,4)
+                        image_partition_list_a = quantization(det_roi,quant_list_a,4,3)
+                        image_partition_list_b = quantization(rem_tracks[idx].last_frame,quant_list_b,4,3)
                         # calculation wasserstein distance for each tile
-                        WASS=my_wass(image_partition_list_a, image_partition_list_b, 7,4)
+                        WASS=my_wass(image_partition_list_a, image_partition_list_b, 4,3)
                         # perform majority vote
-                        if sum(WASS[:,1:3].flatten()<=0.20)>=8:
-
+                        if sum(WASS.flatten()<=0.20)>=6:
+                            tmp_id = detections[each].track_id
                             detections[each].track_id = rem_tracks[idx].track_id
+                            #print(f"track {detections[each].track_id} is changed to track {rem_tracks[idx].track_id}")
+                            rem_tracks[idx].track_id = tmp_id
                             area_of_interest = det_roi
                             detections[each].last_frame = area_of_interest
                             
@@ -301,14 +315,18 @@ class HOPTracker(object):
 
                             activate_tracks.append(detections[each])
                             rem_tracks[idx].mark_removed()
+                            #print(f"track {rem_tracks[idx].track_id} is removed")
                             matched_det.append(detections[each])
                             detections[each].paired = True
                         else:
                             was_unmatched_track.append(rem_tracks[idx])
+                            #print(f"track {rem_tracks[idx].track_id} is added to unmatch")
                     else:
                         was_unmatched_track.append(rem_tracks[idx])
+                        
                 else:
                     was_unmatched_track.append(rem_tracks[idx])
+                     
             
             # if not a single match (not even slightly IOU)
 
@@ -330,7 +348,8 @@ class HOPTracker(object):
             # if not match, all remaining track are lost tracks
             for each in rem_tracks: 
                 if not each.state == TrackState.Lost:
-                    was_unmatched_track.append(each)       
+                    was_unmatched_track.append(each)
+                          
 
 
         """trajectory based finding, existing traj with KF state"""
@@ -374,8 +393,10 @@ class HOPTracker(object):
                     WASS=my_wass(image_partition_list_a, image_partition_list_b, 7,3)
 
                     if sum(WASS[:,1]<=0.20)>=4:
-
+                        tmp_id = potential_match.track_id
                         potential_match.track_id = each_track.track_id
+                       # print(f"track {tmp_id} is changed to track {each_track.track_id}")
+                        potential_match.track_id = tmp_id
                         potential_match.last_frame = det_roi
                         # sending it in to median flow for rein
                         each_track.mean[4] = 0
@@ -383,6 +404,7 @@ class HOPTracker(object):
                         each_track.mean[6] = 0
                         each_track.mean[7] = 0
                         each_track.mark_removed()
+                      #  print(f"track {each_track.track_id} is removed")
                         removed_stracks.append(each_track)
                         activate_tracks.append(potential_match)
 
@@ -401,18 +423,28 @@ class HOPTracker(object):
             if not each.state == TrackState.Lost and each not in matched_track_traj :
                 each.mark_lost()
                 lost_stracks.append(each)
+               # print(f"track {each.track_id} is lost")
 
 
         """ Step 5: Update state"""
         for track in self.lost_stracks:
             if self.frame_id - track.end_frame > self.max_time_lost:
                 track.mark_removed()
-                removed_stracks.append(track)      
+                removed_stracks.append(track)
+              #  print(f"track {track.track_id} is removed")
 
+        if (time.time()-start_time)*1000 < 1000:
+            self.fuse_time += (time.time()-start_time)*1000
+            self.fuse_ct += 1
 
+        #print(f"Fuse time: {self.fuse_time/self.fuse_ct}")
+      #  track_listing(removed_stracks,"removed_track")
+       # track_listing(lost_stracks,"lost_track")
         self.tracked_stracks = [t for t in self.tracked_stracks if t.state == TrackState.Tracked]
         self.tracked_stracks = joint_stracks(self.tracked_stracks, activate_tracks)
         self.tracked_stracks = joint_stracks(self.tracked_stracks, refind_stracks)
+      #  track_listing(self.tracked_stracks,"tracked_track>>>>")
+      #  track_listing(self.removed_stracks,"removed_track>>>>")
 
         self.lost_stracks = sub_stracks(self.lost_stracks, self.tracked_stracks)
         self.lost_stracks.extend(lost_stracks)
@@ -420,7 +452,8 @@ class HOPTracker(object):
         self.removed_stracks.extend(removed_stracks)
         self.tracked_stracks, self.lost_stracks = remove_duplicate_stracks(self.tracked_stracks, self.lost_stracks)
         output_stracks = [track for track in self.tracked_stracks if (track.is_activated and (track.class_id == 0 or track.class_id == 1 or track.class_id == 2))] 
-
+      #  track_listing(output_stracks,"output_track")
+      #  track_listing(self.lost_stracks,"lost_track_by_the_end_of_this_frame")
         return output_stracks
 
     def hopping_update(self, output_results, img_info, img_size):
@@ -443,6 +476,8 @@ class HOPTracker(object):
         scores_keep = scores[inds_high]
         class_keep = cls_name[inds_high]
 
+        hop_start = time.time()
+
         if len(dets) > 0:
             detections = [STrack(STrack.tlbr_to_tlwh(tlbr), s, c) for
                           (tlbr, s, c) in zip(dets, scores_keep, class_keep)]
@@ -454,9 +489,13 @@ class HOPTracker(object):
         for track in self.tracked_stracks:
             if track.is_activated:
                 tracked_tracks.append(track)
+        
+    #    track_listing(self.lost_stracks,"lost_pool_from_previous")
 
         # association based on kalman filter predicted position, theorectically they should align
         strack_pool = joint_stracks(tracked_tracks, self.lost_stracks)
+
+    #    track_listing(strack_pool,"track_pool")
 
         # Predict the current location with KF
         STrack.multi_predict(strack_pool)
@@ -481,36 +520,43 @@ class HOPTracker(object):
 
         potentially_lost = []
         detection_occulusion = []
-        new_thresh=0.1
+        #new_thresh=0.1
         u_track = []
         u_detectons = []
-        while len(r_tracked_stracks)>0 and len(unmatched_detections)>0 and new_thresh > 0.1:
-            new_thresh -= 0.1
-            dists = matching.iou_distance(r_tracked_stracks, unmatched_detections)
-            matches, u_track, u_detection = matching.linear_assignment(dists, thresh=new_thresh)
+        #while len(r_tracked_stracks)>0 and len(unmatched_detections)>0 and new_thresh > 0.1:
+        new_thresh = 0.1
+        dists = matching.iou_distance(r_tracked_stracks, unmatched_detections)
+        matches, u_track, u_detection = matching.linear_assignment(dists, thresh=new_thresh)
 
-            for itracked, idet in matches:
-                track = r_tracked_stracks[itracked]
-                det = unmatched_detections[idet]
-                t_x, t_y, t_w, t_h = track._tlwh
-                d_x, d_y, d_w, d_h = det._tlwh
-                t_hist_b, t_hist_g, t_hist_r = pixel_distribution(frame, int(t_x), int(t_y), int(t_w), int(t_h))
-                d_hist_b, d_hist_g, d_hist_r = pixel_distribution(frame, int(d_x), int(d_y), int(d_w), int(d_h))
-                wass_b = wasserstein_distance(t_hist_b, d_hist_b)
-                wass_g = wasserstein_distance(t_hist_g, d_hist_g)
-                wass_r = wasserstein_distance(t_hist_r, d_hist_r)
-                average_wass = (wass_b + wass_g + wass_r)/3
+        for itracked, idet in matches:
+            track = r_tracked_stracks[itracked]
+            det = unmatched_detections[idet]
+            d_x, d_y, dw, dh = det._tlwh
 
-                if average_wass < 0.5:
-                    if track.state == TrackState.Tracked:
-                        track.update(det, self.frame_id)
-                        activate_tracks.append(track)
-                    else:
-                        track.re_activate(det, self.frame_id, new_id=False)
-                        refind_stracks.append(track)
+            det_roi = frame[int(d_y):int(d_y+dh), int(d_x):int(d_x+dw)]
+            det_roi = np.array(det_roi/(det_roi.mean()/track.last_frame.mean()),dtype=np.uint8)
+            det_roi[det_roi>255] = 255
+            t_x, t_y, t_w, t_h = track._tlwh
+            
+            quant_list_a = dynamic_chunks(det_roi,6,3)
+            quant_list_b = dynamic_chunks(track.last_frame,6,3)
+
+            image_partition_list_a = quantization_color_vector(det_roi,quant_list_a,6,3)
+            image_partition_list_b = quantization_color_vector(track.last_frame,quant_list_b,6,3)
+            cost=color_vector_cost_calculation(image_partition_list_a, image_partition_list_b, 6,3)
+
+            color_matches, color_u_track, color_u_detection = matching.linear_assignment(cost, thresh=0.0001)
+
+            if color_matches.shape[0] >= 9:
+                if track.state == TrackState.Tracked:
+                    track.update(det, self.frame_id)
+                    activate_tracks.append(track)
                 else:
-                    potentially_lost.append(itrack)
-                    detection_occulusion.append(idet)
+                    track.re_activate(det, self.frame_id, new_id=False)
+                    refind_stracks.append(track)
+            else:
+                potentially_lost.append(itrack)
+                detection_occulusion.append(idet)
 
 
         lost_stracks = []
@@ -533,6 +579,11 @@ class HOPTracker(object):
             if self.frame_id - track.end_frame > self.max_time_lost:
                 track.mark_removed()
                 removed_stracks.append(track)
+                #print(f"track {track.track_id} is removed")
+        
+       # print(f"track time: {(time.time()-hop_start)*1000}")
+       # track_listing(removed_stracks,"removed_track")
+       # track_listing(lost_stracks,"lost_track")
 
         self.tracked_stracks = [t for t in self.tracked_stracks if t.state == TrackState.Tracked]
         self.tracked_stracks = joint_stracks(self.tracked_stracks, activate_tracks)
@@ -588,7 +639,7 @@ def remove_duplicate_stracks(stracksa, stracksb):
     resb = [t for i, t in enumerate(stracksb) if not i in dupb]
     return resa, resb
 
-
+@jit
 def trajectory_finder(track, det):
     # get an hint of the moving direction
     tl_x, tl_y, width, height = track._tlwh
@@ -622,6 +673,7 @@ def trajectory_finder(track, det):
 
     return distance
 
+@jit
 def dynamic_chunks(img,row,col):
     height, width = img.shape[:2]
     row_interval = int(height/row)
@@ -632,6 +684,7 @@ def dynamic_chunks(img,row,col):
             quantization_list[i][j] = (i*row_interval, j*col_interval, col_interval, row_interval)
     return quantization_list 
 
+@jit
 def quantization(img,quant_list,row,col):
     height, width = img.shape[:2]
 
@@ -689,6 +742,7 @@ def my_wass(quan_a, quan_b, row, col):
             wass_matrix[i][j] = (b_s + g_s + r_s)/3
     return wass_matrix
 
+@jit
 def pixel_distribution(img, tl_x, tl_y, width, height):
     new_img = img[tl_y:tl_y+height, tl_x:tl_x+width]
     hist_b = cv2.calcHist([new_img],[0],None,[256],[0,256])       # blue channel
@@ -699,6 +753,67 @@ def pixel_distribution(img, tl_x, tl_y, width, height):
     cv2.normalize(hist_g,hist_g,alpha=0, beta=1, norm_type=cv2.NORM_MINMAX)
     cv2.normalize(hist_r,hist_r,alpha=0, beta=1, norm_type=cv2.NORM_MINMAX)
     return (hist_b.flatten(), hist_g.flatten(), hist_r.flatten())
+
+@jit
+def quantization_color_vector(img,quant_list,row,col):
+    height, width = img.shape[:2]
+    img = img/255
+    image_partition_list = np.empty((row,col),dtype=object)
+    for i in range(row):
+        for j in range(col):
+            y, x, w, h = quant_list[i][j]
+            top_x = x
+            top_y = y
+            bot_x = top_x + w
+            bot_y = top_y + h
+            if bot_x >= width:
+                bot_x = width-1
+            if bot_y >= height:
+                bot_y = height-1
+            img_partition = img[top_y:bot_y, top_x:bot_x]
+            image_partition_list[i][j] = img_partition
+    return image_partition_list
+
+@jit
+def color_vector_cost_calculation(quan_a, quan_b, row, col):
+    cost_matrix = np.zeros((row*col, row*col))
+
+    for i_a in range(row):
+        for j_a in range(col):
+            
+            new_img_a = quan_a[i_a][j_a]
+            pix_a = new_img_a.shape[0]*new_img_a.shape[1]
+                    
+            suma_b = np.sum(new_img_a[:,:,0])/pix_a      # blue channel
+            suma_g = np.sum(new_img_a[:,:,1])/pix_a      # green channel
+            suma_r = np.sum(new_img_a[:,:,2])/pix_a      # red channel
+            
+            a_color = np.array([suma_b, suma_g, suma_r])
+
+            for i_b in range(row):
+                for j_b in range(col):
+
+                    new_img_b = quan_b[i_b][j_b]
+                    pix_b = new_img_b.shape[0]*new_img_b.shape[1]
+                    
+                    sumb_b = np.sum(new_img_b[:,:,0])/pix_b      # blue channel
+                    sumb_g = np.sum(new_img_b[:,:,1])/pix_b      # green channel
+                    sumb_r = np.sum(new_img_b[:,:,2])/pix_b      # red channel
+                    # print(sumb_b)
+                    # print(sumb_g)
+                    # print(sumb_r)
+                    if sumb_b ==0 and sumb_g ==0 and sumb_r ==0:
+                        print(new_img_b)
+                        import sys
+                        sys.exit()
+
+                    b_color =  np.array([sumb_b, sumb_g, sumb_r])
+
+                    dis = 1 - np.dot(a_color, b_color)/(np.linalg.norm(a_color)*np.linalg.norm(b_color))
+
+                    cost_matrix[i_a*col+j_a][i_b*col+j_b] = dis
+                   
+    return cost_matrix
 
 """
 Use the following functions to visualize tracks, matches, or plot the trajctory finder match on the frame 
