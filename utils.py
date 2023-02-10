@@ -17,6 +17,7 @@ from yolox.data.data_augment import ValTransform, preproc
 from yolox.data.datasets import COCO_CLASSES
 from yolox.utils import fuse_model, get_model_info, postprocess, vis
 from yolox.models import YOLOX, YOLOPAFPN, YOLOXHead
+from yolox.tracker import matching
 
 import sys
 # for yolov5 detector support
@@ -214,12 +215,13 @@ def dbscan_clustering(online_targets):
         tid, tlwh = each_track.track_id, each_track.tlwh
         x,y,w,h = tlwh
         tid_list.append(tid)
-        centroid_list.append([x+w/2, y+h/2])
-    cluster = DBSCAN(eps=50, min_samples=2).fit(centroid_list)
+        centroid_list.append((np.array([x+w/2, y+h/2]),[x,y,x+w,y+h]))
+
+    cluster_label = modified_dbscan(centroid_list, 50, 3, 0.3)
     
     cluster_dic = {}
     cluster_num = 0
-    for idx, each in enumerate(cluster.labels_):
+    for idx, each in enumerate(cluster_label):
         if each != -1 and each not in cluster_dic.keys():
             cluster_dic[each]=[tid_list[idx]]
             cluster_num += 1
@@ -248,3 +250,79 @@ def trail_run(predictor, frame, fps):
     end = time.time()
     num_track = math.ceil((end-start)/(1/fps))
     return num_track
+
+import numpy
+
+def modified_dbscan(D, eps, MinPts, IoU):
+    
+    # Initially all labels are 0.    
+    labels = [0]*len(D)
+
+    # C is the ID of the current cluster.    
+    C = 0
+    
+    for P in range(0, len(D)):
+    
+        # Only points that have not already been claimed can be picked as new 
+        # seed points.    
+        # If the point's label is not 0, continue to the next point.
+        if not (labels[P] == 0):
+           continue
+        
+        # Find all of P's neighboring points.
+        NeighborPts = region_query(D, P, eps, IoU)
+        
+        if len(NeighborPts) < MinPts:
+            labels[P] = -1
+        # Otherwise, if there are at least MinPts nearby, use this point as the 
+        # seed for a new cluster.    
+        else: 
+           C += 1
+           grow_cluster(D, labels, P, NeighborPts, C, eps, MinPts, IoU)
+    
+    # All data has been clustered!
+    return labels
+
+
+def grow_cluster(D, labels, P, NeighborPts, C, eps, MinPts, IoU):
+
+    # Assign the cluster label to the seed point.
+    labels[P] = C
+    
+    i = 0
+    while i < len(NeighborPts):    
+        
+        # Get the next point from the queue.        
+        Pn = NeighborPts[i]
+       
+        # mark as noisy node
+        if labels[Pn] == -1:
+           labels[Pn] = C
+        
+        # Otherwise, if Pn isn't already claimed, claim it as part of C.
+        elif labels[Pn] == 0:
+            # Add Pn to cluster C (Assign cluster label C).
+            labels[Pn] = C
+            
+            # Find all the neighbors of Pn
+            PnNeighborPts = region_query(D, Pn, eps, IoU)
+            
+            if len(PnNeighborPts) >= MinPts:
+                NeighborPts = NeighborPts + PnNeighborPts         
+        
+        # move to the next point
+        i += 1        
+    
+
+def region_query(D, P, eps, IoU):
+
+    neighbors = []
+    
+    # For each objects
+    for Pn in range(0, len(D)):
+        iou = matching.ious([D[P][1]],[D[Pn][1]])
+        # If the distance is below the threshold, and IoU is greater than the threshold add it to the neighbors list.
+        if numpy.linalg.norm(D[P][0] - D[Pn][0]) < eps and iou > IoU:
+           neighbors.append(Pn)
+            
+    return neighbors
