@@ -12,6 +12,8 @@ import tensorrt as trt
 import pycuda.driver as cuda
 import pycuda.autoinit
 import warnings
+import multiprocessing
+from multiprocessing import Pool, Process
 
 # add current folder into path
 sys.path.insert(0, "/".join(os.getcwd().split('/')[:-1]))
@@ -28,6 +30,20 @@ from yolox.utils import fuse_model, get_model_info, postprocess, vis
 from yolox.utils.visualize import plot_tracking
 from yolox.tracker.hop_tracker import HOPTracker, pixel_distribution
 from yolox.tracking_utils.timer import Timer
+
+def dynamic_rate_adjuster(object_pool, rate_pool, term_pool, mot_test_file):
+    prev = 0
+    while True:
+        if term_pool.qsize() != 0:
+            break
+        if object_pool.qsize() != 0:
+            online_targets = object_pool.get() 
+            if len(online_targets) !=0 :
+                cluster_dic, cluster_num = dbscan_clustering(online_targets)
+                detection_rate = detection_rate_adjuster(cluster_dic, cluster_num, mot_test_file)
+                if detection_rate != prev:
+                    rate_pool.put(detection_rate)
+                    prev = detection_rate
 
 def start_process(source, path, predictor, vis_folder, args):
 
@@ -53,8 +69,7 @@ def start_process(source, path, predictor, vis_folder, args):
 
         logger.info(f"video save_path is {save_path}")
         vid_writer = cv2.VideoWriter(save_path, cv2.VideoWriter_fourcc(*"mp4v"), fps, (int(width), int(height)))
-
-    #         
+      
     tracker = HOPTracker(args, frame_rate=math.ceil(fps))
     light_multi_tracker = cv2.MultiTracker_create()
     detection_result = {}
@@ -64,30 +79,51 @@ def start_process(source, path, predictor, vis_folder, args):
     video_start = time.time()
     img_info = {}
     img_info["height"] = height
-    img_info["width"] = width
+    img_info["width"] = width 
+
+    if args.upper:
+        sampling_strategy = 1           # upper
+    elif args.lower: 
+        sampling_strategy = 2           # lower
+    else:
+        sampling_strategy = 0           # dynamic
+
     detection_rate = 9
 
+    mot_test_file = args.path.split('/')[-1]
+    if "MOT16-05" in args.path.split('/')[-1] or "MOT16-06" in args.path.split('/')[-1]:
+        detection_rate = 4
+    if "MOT16-13" in args.path.split('/')[-1] or "MOT16-14" in args.path.split('/')[-1]:
+        detection_rate = 7
+
+    total_post_fuse = 0
+    total_post_update = 0
+    det_frame_ct = 0
+    tk_frame_ct = 0
+    object_pool = multiprocessing.Queue()
+    rate_pool = multiprocessing.Queue()
+    term_pool = multiprocessing.Queue()
+    p=Process(target=dynamic_rate_adjuster, args=(object_pool,rate_pool,term_pool,mot_test_file, sampling_strategy))
+    p.daemon = True
+    p.start()
     while True:
         ret_val, frame = cap.read()
         if ret_val:
             # for mota measurement purpose
-            #print(f"==========================================frame {frame_id}=============================================")
             if frame_id not in detection_result.keys():
                 detection_result[frame_id]={}
             
             img_info["raw_img"] = frame
 
             if frame_id % detection_rate == 1:
-           #     print(">>>>>>>>>>> fuse detect")
-                det_start = time.time()
                 light_multi_tracker.clear()
                 light_multi_tracker = cv2.MultiTracker_create()
                 outputs, img_info = predictor.inference(frame)
 
-                # the mean in the kalman filter object has all 8 states, potentially expose that to the following interface and do prediction.
                 if outputs[0] is not None:
                     online_targets = tracker.detect_track_fuse(outputs[0], [img_info['height'], img_info['width'], img_info["raw_img"]], exp.test_size)
 
+                    inter_process_start = time.time()
                     online_tlwhs = []
                     online_ids = []
                     online_scores = []
@@ -105,31 +141,41 @@ def start_process(source, path, predictor, vis_folder, args):
                         tlbr=np.append(tlbr,[t.score, t.class_id])
                         tlbr=np.append(tlbr,[tid,t.mean])
                         predicted_bbox.append(tlbr)
-                       
-                        hist_b, hist_g, hist_r = pixel_distribution(frame, int(t.tlwh[0]), int(t.tlwh[1]), int(t.tlwh[2]), int(t.tlwh[3]))
-                        
-                        t.color_dist = [hist_b, hist_g, hist_r]
 
-                        if tlwh[2] * tlwh[3] > args.min_box_area: 
+                        if tlwh[2] * tlwh[3] > args.min_box_area and tlwh[3]/tlwh[2] >= args.aspect_ratio_thresh: 
+                            hist_b, hist_g, hist_r = pixel_distribution(frame, int(t.tlwh[0]), int(t.tlwh[1]), int(t.tlwh[2]), int(t.tlwh[3]))
+                            t.color_dist = [hist_b, hist_g, hist_r]
+                            if t.mean[4] == 0 and t.mean[5] == 0 and t.mean[6] == 0 and t.mean[7] == 0 :
+                                    light_multi_tracker.add(cv2.TrackerMedianFlow_create(), frame, (int(t.tlwh[0]),int(t.tlwh[1]),int(t.tlwh[2]),int(t.tlwh[3])))
+                                    light_tracker_id.append(tid)
+
+                    # discard first three detection fuse time due to numba initialization
+                    end_process = (time.time()-inter_process_start)*1000
+                    det_frame_ct+=1
+                    if det_frame_ct > 3:
+                        total_post_fuse += end_process
+                       # logger.info("average post fuse time: {:.4f}ms".format(total_post_fuse/(det_frame_ct-3)))
+                        tracker.worksheet.write(frame_id, 1, end_process)
+                    
+                    object_pool.put(online_targets)
+                    if rate_pool.qsize()!=0:
+                        detection_rate = int(rate_pool.get())
+                    # the follow logic are used for writing results or draw bounding boxes; will not be caluclated towards the processing time    
+                    for idx_t, t in enumerate(online_targets):
+                        tlwh = t.tlwh
+                        tid = t.track_id
+                        if tlwh[2] * tlwh[3] > args.min_box_area and tlwh[3]/tlwh[2] >= args.aspect_ratio_thresh: 
                             online_tlwhs.append(tlwh)
                             online_ids.append(tid)
                             online_scores.append(t.score)
                             online_class_id.append(t.class_id)
                             
-                            if t.mean[4] == 0 and t.mean[5] == 0 and t.mean[6] == 0 and t.mean[7] == 0 :
-                                light_tracker_list.append((int(t.tlwh[0]),int(t.tlwh[1]),int(t.tlwh[2]),int(t.tlwh[3])))
-                                light_tracker_id.append(tid)
                             if t.class_id == 0:     # person only
-                                
                                 detection_result[frame_id][t.track_id]=(t.tlwh[0],t.tlwh[1],t.tlwh[2],t.tlwh[3])
                             print(f"{frame_id},{t.track_id},{t.tlwh[0]},{t.tlwh[1]},{t.tlwh[2]},{t.tlwh[3]},{t.score},-1,-1,-1")
 
-                    for each in light_tracker_list:
-                        light_multi_tracker.add(cv2.TrackerMedianFlow_create(), frame, each)
-                    if len(online_targets) !=0 :
-                        cluster_dic, cluster_num = dbscan_clustering(online_targets)
-                        detection_rate = detection_rate_adjuster(cluster_dic, cluster_num)
-
+                   
+                   
                     online_im = plot_tracking(
                         image=img_info['raw_img'], tlwhs=online_tlwhs, obj_ids=online_ids, online_class_id=online_class_id, frame_id=frame_id + 1, fps=fps, scores=online_scores, class_names = COCO_CLASSES
                     )
@@ -138,23 +184,19 @@ def start_process(source, path, predictor, vis_folder, args):
                     online_im = img_info['raw_img']
 
             else:
-            #    print(f">>>>>>> track")
-                track_start = time.time()
                 # for mota purpose
                 if frame_id not in detection_result.keys():
                     detection_result[frame_id]={}
-                track_start = time.time()
+                
                 if len(predicted_bbox) != 0:
-                    
+                    tk_start = time.time()
                     predict_bbox = []
-                  #  print(f"light track id:{light_tracker_id}" )
-                    if frame_id % detection_rate <= 3: # update three frames with light tracker to get the kalman filter upd
+
+                    if frame_id % detection_rate < 3: # update three frames with light tracker to get the kalman filter upd
                         light_track_ok, light_track_bbox = light_multi_tracker.update(frame)
                     else:
                         light_track_ok = False
-                  #  print(f"light_track_ok: {light_track_ok}")
 
-                    tk_start = time.time()
                     for idx, each_track in enumerate(online_targets):
                         
                         # check if the bbox is in the light_tracker_list -> new track or reinitiated track 
@@ -178,14 +220,9 @@ def start_process(source, path, predictor, vis_folder, args):
 
                     predicted_bbox = torch.tensor(np.array(predict_bbox), dtype=torch.float32)
 
-
                     # using the predicted bbox as the new detection result and feed into the tracker update
-                    tk_update = time.time()
+                    tk_tmp = time.time()
                     online_targets = tracker.hopping_update(predicted_bbox, [img_info['height'], img_info['width'], img_info['raw_img']], exp.test_size)
-                    
-                    # the following dynamic sampling might be enabled 
-                    #cluster_dic, cluster_num = dbscan_clustering(online_targets)
-                    #detection_rate = detection_rate_adjuster(cluster_dic, cluster_num)
 
                     online_tlwhs = []
                     online_ids = []
@@ -193,6 +230,14 @@ def start_process(source, path, predictor, vis_folder, args):
                     online_class_id = []
                     predicted_bbox = []
 
+                    tk_frame_ct += 1
+                    tk_dur = (tk_tmp - tk_start)*1000
+                    if tk_frame_ct > 1:
+                        total_post_update += tk_dur
+                        #logger.info("average post update time: {:.4f}ms".format(total_post_update/(tk_frame_ct-1)))
+                        tracker.worksheet.write(frame_id, 3, tk_dur)
+
+                    # the follow logic are used for writing results or draw bounding boxes; will not be caluclated towards the processing time
                     for t in online_targets:
                         tlwh = t.tlwh
                         tid = t.track_id
@@ -202,7 +247,7 @@ def start_process(source, path, predictor, vis_folder, args):
                         tlbr=np.append(tlbr,[tid,t.mean])
                         predicted_bbox.append(tlbr)
 
-                        if tlwh[2] * tlwh[3] > args.min_box_area: #and not vertical:
+                        if tlwh[2] * tlwh[3] > args.min_box_area and tlwh[3]/tlwh[2] >= args.aspect_ratio_thresh:
                             online_tlwhs.append(tlwh)
                             online_ids.append(tid)
                             online_scores.append(t.score)
@@ -220,9 +265,8 @@ def start_process(source, path, predictor, vis_folder, args):
             frame_id +=1
 
             if args.save_result:
-                vid_writer.write(online_im)
-                
-                #cv2.imwrite(os.getcwd()+"/imgs/"+str(frame_id-1)+".png", online_im)
+                #vid_writer.write(online_im)
+               # cv2.imwrite(os.getcwd()+"/imgs/"+str(frame_id-1)+".png", online_im)
                 pass
             else:
                 cv2.namedWindow("yolox", cv2.WINDOW_NORMAL)
@@ -233,7 +277,9 @@ def start_process(source, path, predictor, vis_folder, args):
         else:
             break
     video_end = time.time()
-
+    tracker.workbook.close()
+    term_pool.put('T')
+    p.join()
     with open(f"{args.path.split('.')[0]}_result.json",'w') as fp:
         json.dump(detection_result,fp)  
     cap.release()
@@ -256,7 +302,13 @@ if __name__ == '__main__':
     parser.add_argument("--fp16", dest="fp16", default=False, action="store_true", help="Adopting mix precision evaluating.")
     parser.add_argument("--legacy", dest="legacy", default=False, action="store_true", help="To be compatible with older versions")
     parser.add_argument("--fuse",dest="fuse",default=False,action="store_true",help="Fuse conv and bn for testing.")
-    parser.add_argument("--mot",dest="mot",default=False,action="store_true",help="Fuse conv and bn for testing.")
+    parser.add_argument("--mot",dest="mot",default=False,action="store_true",help="run mot trained model.")
+    parser.add_argument("--dis_traj",dest="dis_traj",default=False,action="store_true",help="Disable trajectory finding and dynamic matching")
+    parser.add_argument("--dynamic",dest="dynamic",default=False,action="store_true",help="Enable content-aware dynamic sampling")
+    parser.add_argument("--upper",dest="upper",default=False,action="store_true",help="Enable upper bound sampling, fast but lower mota")
+    parser.add_argument("--lower",dest="lower",default=False,action="store_true",help="Enable lower bound sampling, slow but higher mota")
+
+
     # tracking arg
     parser.add_argument("--track_thresh", type=float, default=0.4, help="tracking confidence threshold")
     parser.add_argument("--track_buffer", type=int, default=30, help="the frames for keep lost tracks")
