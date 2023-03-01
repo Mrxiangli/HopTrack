@@ -31,7 +31,7 @@ from yolox.utils.visualize import plot_tracking
 from yolox.tracker.hop_tracker import HOPTracker, pixel_distribution
 from yolox.tracking_utils.timer import Timer
 
-def dynamic_rate_adjuster(object_pool, rate_pool, term_pool, mot_test_file):
+def dynamic_rate_adjuster(object_pool, rate_pool, term_pool, mot_test_file, sampling_strategy):
     prev = 0
     while True:
         if term_pool.qsize() != 0:
@@ -40,7 +40,7 @@ def dynamic_rate_adjuster(object_pool, rate_pool, term_pool, mot_test_file):
             online_targets = object_pool.get() 
             if len(online_targets) !=0 :
                 cluster_dic, cluster_num = dbscan_clustering(online_targets)
-                detection_rate = detection_rate_adjuster(cluster_dic, cluster_num, mot_test_file)
+                detection_rate = detection_rate_adjuster(cluster_dic, cluster_num, mot_test_file, sampling_strategy)
                 if detection_rate != prev:
                     rate_pool.put(detection_rate)
                     prev = detection_rate
