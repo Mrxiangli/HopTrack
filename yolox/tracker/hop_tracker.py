@@ -157,12 +157,13 @@ class HOPTracker(object):
         self.kalman_filter = KalmanFilter()
         self.fuse_ct = 0
         self.fuse_time = 0
-        self.workbook = xlsxwriter.Workbook(f"{args.path.split('/')[-1].split('.')[0]}"+"_time.xlsx")
-        self.worksheet = self.workbook.add_worksheet()
-        self.worksheet.write(0, 0, "detect_fuse")
-        self.worksheet.write(0, 1, "post_detect")
-        self.worksheet.write(0, 2, "track_fuse")
-        self.worksheet.write(0, 3, "post_track")
+        if args.source != "webcam":
+            self.workbook = xlsxwriter.Workbook(f"{args.path.split('/')[-1].split('.')[0]}"+"_time.xlsx")
+            self.worksheet = self.workbook.add_worksheet()
+            self.worksheet.write(0, 0, "detect_fuse")
+            self.worksheet.write(0, 1, "post_detect")
+            self.worksheet.write(0, 2, "track_fuse")
+            self.worksheet.write(0, 3, "post_track")
 
     def detect_track_fuse(self, output_results, img_info, img_size):
         self.frame_id += 1
@@ -474,7 +475,8 @@ class HOPTracker(object):
 
         duration = (time.time() - start_time)*1000
         #logger.info("fuse time: {:.4f}ms".format(duration))
-        self.worksheet.write(self.frame_id, 0, duration)
+        if self.args.source != "webcam":
+            self.worksheet.write(self.frame_id, 0, duration)
         return output_stracks
 
     def hopping_update(self, output_results, img_info, img_size):
@@ -620,7 +622,8 @@ class HOPTracker(object):
         output_stracks = [track for track in self.tracked_stracks if (track.is_activated and (track.class_id == 0 or track.class_id == 1 or track.class_id == 2))]
         duration = (time.time() - hop_start)*1000
         #logger.info("hop time: {:.4f}ms".format(duration))
-        self.worksheet.write(self.frame_id, 2, duration)
+        if self.args.source != "webcam":
+            self.worksheet.write(self.frame_id, 2, duration)
         return output_stracks
 
 

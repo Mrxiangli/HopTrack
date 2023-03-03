@@ -12,24 +12,37 @@ if sys.argv[1] == "lower":
 if sys.argv[1] == "dynamic":
     sampling_strategy = 0
 
+# mot_files = [
+#     'MOT16-01_time.xlsx',
+#     'MOT16-02_time.xlsx',
+#     'MOT16-03_time.xlsx',
+#     'MOT16-04_time.xlsx',
+#     'MOT16-05_time.xlsx',
+#     'MOT16-06_time.xlsx',
+#     'MOT16-07_time.xlsx',
+#     'MOT16-08_time.xlsx',
+#     'MOT16-09_time.xlsx',
+#     'MOT16-10_time.xlsx',
+#     'MOT16-11_time.xlsx',
+#     'MOT16-12_time.xlsx',
+#     'MOT16-13_time.xlsx',
+#     'MOT16-14_time.xlsx',
+# ]
+
 mot_files = [
-    'MOT16-01_time.xlsx',
-    'MOT16-02_time.xlsx',
-    'MOT16-03_time.xlsx',
-    'MOT16-04_time.xlsx',
-    'MOT16-05_time.xlsx',
-    'MOT16-06_time.xlsx',
-    'MOT16-07_time.xlsx',
-    'MOT16-08_time.xlsx',
-    'MOT16-09_time.xlsx',
-    'MOT16-10_time.xlsx',
-    'MOT16-11_time.xlsx',
-    'MOT16-12_time.xlsx',
-    'MOT16-13_time.xlsx',
-    'MOT16-14_time.xlsx',
+    'MOT20-01_time.xlsx',
+    'MOT20-02_time.xlsx',
+    'MOT20-03_time.xlsx',
+    'MOT20-04_time.xlsx',
+    'MOT20-05_time.xlsx',
+    'MOT20-06_time.xlsx',
+    'MOT20-07_time.xlsx',
+    'MOT20-08_time.xlsx',
 ]
 
-workbook = xlsxwriter.Workbook("MOT16_FPS.xlsx")
+
+
+workbook = xlsxwriter.Workbook("MOT20_FPS.xlsx")
 worksheet = workbook.add_worksheet()
 worksheet.write(0, 0, "sequence")
 worksheet.write(0, 1, "det_fuse")
@@ -80,7 +93,7 @@ for idx, each in enumerate(mot_files):
         elif "MOT16-13" in each or "MOT16-14" in each:
             average_rate = 7
         else:
-            average_rate = 8
+            average_rate = 9
     
 
     det_process = avg_det_fuse + avg_post_det + average_infer

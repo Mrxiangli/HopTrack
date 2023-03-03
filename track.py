@@ -48,7 +48,7 @@ def dynamic_rate_adjuster(object_pool, rate_pool, term_pool, mot_test_file, samp
 def start_process(source, path, predictor, vis_folder, args):
 
     if source == "webcam":
-        cap = cv2.VideoCapture(source)
+        cap = cv2.VideoCapture(0)
     else:
         cap = cv2.VideoCapture(path)
 
@@ -89,12 +89,15 @@ def start_process(source, path, predictor, vis_folder, args):
         sampling_strategy = 0           # dynamic
 
     detection_rate = 9
-
-    mot_test_file = args.path.split('/')[-1]
-    if "MOT16-05" in args.path.split('/')[-1] or "MOT16-06" in args.path.split('/')[-1]:
-        detection_rate = 4
-    if "MOT16-13" in args.path.split('/')[-1] or "MOT16-14" in args.path.split('/')[-1]:
-        detection_rate = 7
+    if args.source != "webcam":
+        mot_test_file = args.path.split('/')[-1]
+        if "MOT16-05" in args.path.split('/')[-1] or "MOT16-06" in args.path.split('/')[-1]:
+            detection_rate = 4
+        if "MOT16-13" in args.path.split('/')[-1] or "MOT16-14" in args.path.split('/')[-1]:
+            detection_rate = 7
+        
+    else:
+        detection_rate = 9
 
     total_post_fuse = 0
     total_post_update = 0
@@ -103,6 +106,7 @@ def start_process(source, path, predictor, vis_folder, args):
     object_pool = multiprocessing.Queue()
     rate_pool = multiprocessing.Queue()
     term_pool = multiprocessing.Queue()
+
     p=Process(target=dynamic_rate_adjuster, args=(object_pool,rate_pool,term_pool,mot_test_file, sampling_strategy))
     p.daemon = True
     p.start()
@@ -112,7 +116,8 @@ def start_process(source, path, predictor, vis_folder, args):
             # for mota measurement purpose
             if frame_id not in detection_result.keys():
                 detection_result[frame_id]={}
-            
+            if args.source == "webcam":
+                frame = cv2.resize(frame,(640,480))
             img_info["raw_img"] = frame
 
             if frame_id % detection_rate == 1:
@@ -155,7 +160,8 @@ def start_process(source, path, predictor, vis_folder, args):
                     if det_frame_ct > 3:
                         total_post_fuse += end_process
                        # logger.info("average post fuse time: {:.4f}ms".format(total_post_fuse/(det_frame_ct-3)))
-                        tracker.worksheet.write(frame_id, 1, end_process)
+                        if args.source != "webcam":
+                            tracker.worksheet.write(frame_id, 1, end_process)
                     
                     object_pool.put(online_targets)
                     if rate_pool.qsize()!=0:
@@ -192,7 +198,7 @@ def start_process(source, path, predictor, vis_folder, args):
                     tk_start = time.time()
                     predict_bbox = []
 
-                    if frame_id % detection_rate < 3: # update three frames with light tracker to get the kalman filter upd
+                    if frame_id % detection_rate <= 3: # update three frames with light tracker to get the kalman filter upd
                         light_track_ok, light_track_bbox = light_multi_tracker.update(frame)
                     else:
                         light_track_ok = False
@@ -235,7 +241,8 @@ def start_process(source, path, predictor, vis_folder, args):
                     if tk_frame_ct > 1:
                         total_post_update += tk_dur
                         #logger.info("average post update time: {:.4f}ms".format(total_post_update/(tk_frame_ct-1)))
-                        tracker.worksheet.write(frame_id, 3, tk_dur)
+                        if args.source != "webcam":
+                            tracker.worksheet.write(frame_id, 3, tk_dur)
 
                     # the follow logic are used for writing results or draw bounding boxes; will not be caluclated towards the processing time
                     for t in online_targets:
@@ -270,18 +277,18 @@ def start_process(source, path, predictor, vis_folder, args):
                 pass
             else:
                 cv2.namedWindow("yolox", cv2.WINDOW_NORMAL)
-                cv2.imshow("yolox", result_frame)
+                cv2.imshow("yolox", online_im)
             ch = cv2.waitKey(1)
             if ch == 27 or ch == ord("q") or ch == ord("Q"):
                 break
         else:
             break
     video_end = time.time()
-    tracker.workbook.close()
-    term_pool.put('T')
-    p.join()
-    with open(f"{args.path.split('.')[0]}_result.json",'w') as fp:
-        json.dump(detection_result,fp)  
+    if args.source != "webcam":
+        tracker.workbook.close()
+        term_pool.put('T')
+        p.join()
+
     cap.release()
     cv2.destroyAllWindows()
 
@@ -311,7 +318,7 @@ if __name__ == '__main__':
 
     # tracking arg
     parser.add_argument("--track_thresh", type=float, default=0.4, help="tracking confidence threshold")
-    parser.add_argument("--track_buffer", type=int, default=30, help="the frames for keep lost tracks")
+    parser.add_argument("--track_buffer", type=int, default=60, help="the frames for keep lost tracks")
     parser.add_argument("--match_thresh", type=float, default=0.7, help="matching threshold for tracking")
     parser.add_argument("--aspect_ratio_thresh", type=float, default=1.6, help="threshold for filtering out boxes of which aspect ratio are above the given value.")
     parser.add_argument('--min_box_area', type=float, default=4, help='filter out tiny boxes')

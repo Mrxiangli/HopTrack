@@ -234,14 +234,14 @@ def dbscan_clustering(online_targets):
 
 # Dynamic_rate adjuster to accomodate the process quality 
 def detection_rate_adjuster(cluster_dic, cluster_num, mot_test_file, sampling_strategy):
+    
     if sampling_strategy == 1:             # upper bound sampling
         if "MOT16-05" in mot_test_file or "MOT16-06" in mot_test_file:
             detection_rate = 6
         elif "MOT16-13" in mot_test_file or "MOT16-14" in mot_test_file:
             detection_rate = 8
         else:
-            detection_rate = 13
-        return detection_rate   
+            detection_rate = 13 
     
     elif sampling_strategy == 2:            # lower bound sampling
         if "MOT16-05" in mot_test_file or "MOT16-06" in mot_test_file:
@@ -250,7 +250,6 @@ def detection_rate_adjuster(cluster_dic, cluster_num, mot_test_file, sampling_st
             detection_rate = 6
         else:
             detection_rate = 8
-        return detection_rate    
 
     else:   # dynamic case
         if "MOT16-05" in mot_test_file or "MOT16-06" in mot_test_file:
@@ -275,14 +274,14 @@ def detection_rate_adjuster(cluster_dic, cluster_num, mot_test_file, sampling_st
 
         else:
             if cluster_num > 4 :
-                detection_rate = 7
-            elif cluster_num > 3:
                 detection_rate = 8
-            elif cluster_num > 2:
+            elif cluster_num > 3:
                 detection_rate = 9
-            else:
+            elif cluster_num > 2:
                 detection_rate = 10
-        return detection_rate
+            else:
+                detection_rate = 11
+    return detection_rate
 
 # enable trail run when needed for GPU preheat!
 def trail_run(predictor, frame, fps):
