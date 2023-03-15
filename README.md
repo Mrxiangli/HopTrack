@@ -48,7 +48,7 @@ Since HopTrack is detector independent, it can be adapted with any state-of-the-
 ```
 <tx, ty, bx, by, class_id, confidence>
 ```
-We reserved two detector sockets in our implementation, Yolox and Yolov5, their repective weights can be downloaded from [Yolox weighs](https://drive.google.com/drive/folders/14MRgF8W7mES5AYbOUH3YvpXx3RQzxUjf?usp=sharing) and [Yolov5 weights](https://github.com/ultralytics/yolov5).
+We reserved two detector sockets in our implementation, Yolox and Yolov5, their repective weights can be downloaded from [Yolox weights](https://drive.google.com/drive/folders/14MRgF8W7mES5AYbOUH3YvpXx3RQzxUjf?usp=sharing) and [Yolov5 weights](https://github.com/ultralytics/yolov5).
 
 HopTrack has three different variations - HopDynamo, HopSwift, HopAccurate. To sepcify the variation to execute, the following command can be used:
 ```
