@@ -16,7 +16,7 @@ followed by an association algorithm to link detection across frames and predict
 ### State-of-the-arts trackers' performance when process on Nvidia Jetson AGX Xavier (MOT16/17)
 | Scheme     |  MOTA | IDF1 | HOTA | MT | ML | FP | FN | IDsw | FPS* |
 |------------|-------|------|------|-------|-------|------|------|------|------|
-|[ByteTrack](https://github.com/ifzhang/ByteTrack)   | 80.3 | 77.3 | 63.1 | 53.2% | 14.5% | 25491 | 83721 | 2196 |'''diff -10.11 |
+|[ByteTrack](https://github.com/ifzhang/ByteTrack)   | 80.3 | 77.3 | 63.1 | 53.2% | 14.5% | 25491 | 83721 | 2196 | 10.11 |
 |[StrongSort](https://github.com/dyhBUPT/StrongSORT)  | 78.3 | 78.5 | 63.5 | -- | -- | -- | -- | 1446 | 3.2 |
 |[DeepSort](https://github.com/nwojke/deep_sort)    | 78.0 | 74.5 | 61.2 | -- | -- | -- | -- | 1821 | 5.9 |
 |[JDE*](https://github.com/Zhongdao/Towards-Realtime-MOT) | 73.1 | 68.9 | -- | -- | --  | 6593 | 21788 | 1312 | 9.08 |
@@ -47,7 +47,7 @@ Since HopTrack is detector independent, it can be adapted with any state-of-the-
 ```
 <tx, ty, bx, by, class_id, confidence>
 ```
-We reserved two detector sockets in our implementation, Yolox and Yolov5, their repective weights can be downloaded from [Yolox weighs] and [Yolov5 weights](https://github.com/ultralytics/yolov5).
+We reserved two detector sockets in our implementation, Yolox and Yolov5, their repective weights can be downloaded from [Yolox weighs](https://drive.google.com/drive/folders/14MRgF8W7mES5AYbOUH3YvpXx3RQzxUjf?usp=sharing) and [Yolov5 weights](https://github.com/ultralytics/yolov5).
 
 HopTrack has three different variations - HopDynamo, HopSwift, HopAccurate. To sepcify the variation to execute, the following command can be used:
 ```
@@ -73,5 +73,17 @@ save the processed video sequence
 
 ## HopTrack Evaluation
 
-To replicate the results, it is important to download the original dataset from [MOT16](https://motchallenge.net/data/MOT16/), [MOT17](https://motchallenge.net/data/MOT17/) and [MOT20](https://motchallenge.net/data/MOT20/)
+To replicate the results, you need to download the original dataset from [MOT16](https://motchallenge.net/data/MOT16/), [MOT17](https://motchallenge.net/data/MOT17/) and [MOT20](https://motchallenge.net/data/MOT20/). Since the original dataset is provided in the form of individual frames, using the following command and the repected framerate of the video sequence to assemble the individual images into frames.
 
+```
+$ ffmpeg -r [framerate] -i path/to/image/img%06d.png -c:v libx264 -vf fps=[framerate] -pix_fmt yuv420p out.mp4
+```
+
+Then, run
+```
+python track.py --path path/to/the/video.mp4 --model yolox_s --ckpt path/to/the/weight.pth.tar --mot --dynamic > video_result.txt
+```
+
+The generated video_result.txt is mot compatible, can be directly submitted to the test server through the [MOT challenge](https://motchallenge.net/instructions/) website.
+
+A comprehensive raw data from our test can be downloaded [here](https://drive.google.com/drive/folders/1F_H2E0M_2OgI6HoVkB9LP3SJaisvjDTh?usp=sharing)
