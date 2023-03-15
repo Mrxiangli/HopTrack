@@ -26,3 +26,52 @@ JDE is tested on MOT16 only
 ### Visualization results on MOT challenge test set
 <img src="src_files/sample_video/MOT16-01.gif" width="400"/>  <img src="src_files/sample_video/MOT16-03.gif" width="400"/>
 <img src="src_files/sample_video/MOT16-09.gif" width="400"/>  <img src="src_files/sample_video/MOT16-13.gif" width="400"/>
+
+## HopTrack Implementation
+Since HopTrack is designed to run on embedded devices, a compatible Nvidia jetson Platforms is need in order to replicate our experiments. At the time writing this document, we performed thorough test of HopTrack on NVIDIA Jetson AGX Xavier. The enviroment of the hardware is listed below:
+```
+Jetpack: 4.6.2 [L4T 32.7.2]
+CUDA: 10.2.300
+OPENCV: 4.4.0 compiled CUDA: YES
+TensorRT: 8.2.1.8 
+cuDNN: 8.2.1.32
+```
+
+We implemented HopTrack with Python 3.6.9. The rest of the supporting package can be installed with the following command:
+
+```
+$pip install -r requirements.txt
+```
+
+Since HopTrack is detector independent, it can be adapted with any state-of-the-arts detector that produce the bounding box outputs with the following format 
+```
+<tx, ty, bx, by, class_id, confidence>
+```
+We reserved two detector sockets in our implementation, Yolox and Yolov5, their repective weights can be downloaded from [Yolox weighs] and [Yolov5 weights](https://github.com/ultralytics/yolov5).
+
+HopTrack has three different variations - HopDynamo, HopSwift, HopAccurate. To sepcify the variation to execute, the following command can be used:
+```
+python track.py --path path/to/the/video.mp4 --model yolox_s --ckpt path/to/the/weight.pth.tar --mot --dynamic
+```
+```
+--mot
+```
+indicates to use the privately trained weights start with "hoptrack_xxx.tar", this only performs tracking on human. For public detectors, remove '--mot' flag and use the corresponding weights.
+```
+--dynamic 
+```
+indicates the dynamic sample strategy. using "--swift" or "--accurate" for other two sampling strategies.
+```
+--dis_traj
+```
+can be used to enable and disable the trajectory
+
+```
+--save_result
+```
+save the processed video sequence
+
+## HopTrack Evaluation
+
+To replicate the results, it is important to download the original dataset from [MOT16](https://motchallenge.net/data/MOT16/), [MOT17](https://motchallenge.net/data/MOT17/) and [MOT20](https://motchallenge.net/data/MOT20/)
+
