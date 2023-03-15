@@ -43,6 +43,7 @@ We implemented HopTrack with Python 3.6.9. The rest of the supporting package ca
 $pip install -r requirements.txt
 ```
 
+### Tracking accuracy test
 Since HopTrack is detector independent, it can be adapted with any state-of-the-arts detector that produce the bounding box outputs with the following format 
 ```
 <tx, ty, bx, by, class_id, confidence>
@@ -85,5 +86,33 @@ python track.py --path path/to/the/video.mp4 --model yolox_s --ckpt path/to/the/
 ```
 
 The generated video_result.txt is mot compatible, can be directly submitted to the test server through the [MOT challenge](https://motchallenge.net/instructions/) website.
+
+### Power, Energy and Memory test
+
+To measure the power, energy, memory consumption, we used the tegrastats tool provided by NVIDIA. Since the record logged from the tegrastats varies based on the Jetson platform and the Jetpack version. The provided script may only work with the specified Jetpack version as mentioned earlier. To measure the power, energy and memory consumption, you can use the provided script powerlog.py. A sample command is
+```
+$ python powerlog.py dynamic
+```
+The above command requires sudo access due to the tegrastats utility. This should automatically start the tegrastats log and run the entire testing video sequences. Modify the sequence as need to test different dataset.
+
+### GPU, CPU contention test
+
+For CPU stress test, you will need to install the 'stress' tool using the following command
+```
+sudo apt install -y stress
+```
+Then using the following command to specify the number of CPU cores you need to stress
+```
+stress --cpu n
+```
+note that there are only 8 cpu cores on the AGX Xavier, and two of them are Denver core which by default are not enabled. Make sure your system have all cores enabled before performing this stress test.
+
+
+For GPU contention test, we provide a script that can approximately generate GPU contention within 5% error:
+```
+python gpu_contention.py --GPU n
+```
+where n is the contention in percentage. (Due to the memory reading speed issue, the contention generated here may saturate after 50%).
+
 
 A comprehensive raw data from our test can be downloaded [here](https://drive.google.com/drive/folders/1F_H2E0M_2OgI6HoVkB9LP3SJaisvjDTh?usp=sharing)
