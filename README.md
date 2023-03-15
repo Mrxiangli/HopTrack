@@ -23,6 +23,18 @@ followed by an association algorithm to link detection across frames and predict
 
 JDE is tested on MOT16 only
 
+### Comparison of HopTrack and existing SOTA trackers for embedded devices
+| Scheme     |  MOTA | IDF1 | HOTA | MT | ML | FP | FN | IDsw | FPS* |
+|------------|-------|------|------|------|------|------|------|-------|------|
+| Byte(Embd)   | 60.97 | 58.38 | 48.7  | 26.5 | 19.0 | 16232 | 51963 | 2958 | 30.8 |
+| JDE(Embd)    | 44.9  | 45.36 | 36.13 | 9.4 | 46.2 |17034 | 80949 | 2474 | 17.93 |
+| [RTMOVT](https://ieeexplore.ieee.org/document/9344696)| 45.14 | 45.54 | 36.78 | 8.2 | 39.7 |18943 | 78195 | 2886 | 24.09|
+| [MobileNet-JDE](https://link.springer.com/article/10.1007/s11042-022-12095-9)| 58.3  | 48.0  | 41.0  | 25 | 24.5 |9420 | 63270 | 3358 | 12.6 |
+| [REMOT](https://ieeexplore.ieee.org/document/9547347)        | 48.93 | 54.4  | --    | 18.7 | 36.5 |9410 | 82903 | 791 | 58-81 |
+|**HopTrack**     | **62.91** | **60.83** | **50.35** | **31.9** | **13.4** |19063 | **46283** | 2278 | 30.61 |
+
+Byte(Embd), JDE(Embd) are modified from ByteTrack and JDE by only perform detection on key frames and using Kalman Filter to track the rest instead of perform detection on everyframe to increase the processing rate.
+
 ### Visualization results on MOT challenge test set
 <img src="src_files/sample_video/MOT16-01.gif" width="400"/>  <img src="src_files/sample_video/MOT16-03.gif" width="400"/>
 <img src="src_files/sample_video/MOT16-09.gif" width="400"/>  <img src="src_files/sample_video/MOT16-13.gif" width="400"/>
