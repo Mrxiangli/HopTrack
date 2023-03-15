@@ -48,7 +48,7 @@ Since HopTrack is detector independent, it can be adapted with any state-of-the-
 ```
 <tx, ty, bx, by, class_id, confidence>
 ```
-We reserved two detector sockets in our implementation, Yolox and Yolov5, their repective weights can be downloaded from [Yolox weights](https://drive.google.com/drive/folders/14MRgF8W7mES5AYbOUH3YvpXx3RQzxUjf?usp=sharing) and [Yolov5 weights](https://github.com/ultralytics/yolov5).
+We reserved two detector sockets in our implementation, Yolox and Yolov5, their repective weights can be downloaded from [Yolox weights](https://drive.google.com/drive/folders/1aSjvfq9nOUFEGl46R_o20grMnTnwYBUE?usp=sharing) and [Yolov5 weights](https://github.com/ultralytics/yolov5).
 
 HopTrack has three different variations - HopDynamo, HopSwift, HopAccurate. To sepcify the variation to execute, the following command can be used:
 ```
@@ -115,4 +115,4 @@ python gpu_contention.py --GPU n
 where n is the contention in percentage. (Due to the memory reading speed issue, the contention generated here may saturate after 50%).
 
 
-A comprehensive raw data from our test can be downloaded [here](https://drive.google.com/drive/folders/1F_H2E0M_2OgI6HoVkB9LP3SJaisvjDTh?usp=sharing)
+A comprehensive raw data from our test can be downloaded [here](https://drive.google.com/drive/folders/1AGPM8e7vc2HNScV3K5LxExt4rjUUkaYo?usp=sharing)
