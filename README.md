@@ -13,3 +13,6 @@ followed by an association algorithm to link detection across frames and predict
 |MOT20       | 45.6 | 45.2 | 35.4 | 12.8% | 21.6%  | 40419 | 237887 | 2924 | 13.94 |
 
 * All FPS reported are measured on Nvidia Jetson AGX Xavier 
+### Visualization results on MOT challenge test set
+<img src="src_files/sample_video/MOT16-01.gif" width="400"/>  <img src="src_files/sample_video/MOT16-03.gif" width="400"/>
+<img src="src_files/sample_video/MOT16-09.gif" width="400"/>  <img src="src_files/sample_video/MOT16-13.gif" width="400"/>
