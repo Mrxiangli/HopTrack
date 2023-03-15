@@ -101,6 +101,8 @@ class Predictor(object):
         self.stream = trt_engine[3] 
         self.context = trt_engine[4] 
         self.engine = trt_engine[5]
+        self.infer_ct = 0
+        self.total_time = 0
 
         # used for input preprocee for yolox trained on MOT dataset 
         self.rgb_means = (0.485, 0.456, 0.406)
@@ -153,6 +155,7 @@ class Predictor(object):
                     img = img.half()  # to FP16
 
         with torch.no_grad():
+            self.infer_ct +=1
             t0 = time.time()
             # inference with tensorrt engine
             if self.args.trt != None:
@@ -172,8 +175,10 @@ class Predictor(object):
                 for det in outputs:
                     if len(det):
                         det[:, :4] = scale_boxes(im.shape[2:], det[:, :4], (1080,1920,3)).round()
-
+            infer_time = time.time() - t0
+            self.total_time += infer_time
             logger.info("Infer time: {:.4f}s".format(time.time() - t0))
+            logger.info("average {:.4f}s".format(self.total_time/self.infer_ct))
         return outputs, img_info
 
 # build tensorrt engine if available

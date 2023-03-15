@@ -8,20 +8,16 @@ cur_dir = os.getcwd()
 if len(sys.argv) != 2:
     assert("Error number of arguments")
 mode = sys.argv[1]
-if len(sys.argv) == 3:
-    traj = "Notraj"
-else:
-    traj = "traj"
 
 if True:
-        eng_logfile = '{}/{}_{}_energy.txt'.format(cur_dir, mode, traj)
+        eng_logfile = '{}/{}_NoTraj_energy.txt'.format(cur_dir, mode)
         p_stats = subprocess.Popen(
             ["sudo tegrastats --logfile {} &".format(eng_logfile)],
             shell=True
         )
 
         start_exec = subprocess.Popen(
-            ["sh autotest_power.sh {}".format(mode)],
+            ["sh autotest_power.sh {} dis_traj".format(mode)],
             shell=True
         )
         start_exec.communicate()

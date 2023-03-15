@@ -89,6 +89,7 @@ def start_process(source, path, predictor, vis_folder, args):
         sampling_strategy = 0           # dynamic
 
     detection_rate = 9
+    
     if args.source != "webcam":
         mot_test_file = args.path.split('/')[-1]
         if "MOT16-05" in args.path.split('/')[-1] or "MOT16-06" in args.path.split('/')[-1]:
@@ -318,7 +319,7 @@ if __name__ == '__main__':
 
     # tracking arg
     parser.add_argument("--track_thresh", type=float, default=0.4, help="tracking confidence threshold")
-    parser.add_argument("--track_buffer", type=int, default=60, help="the frames for keep lost tracks")
+    parser.add_argument("--track_buffer", type=int, default=30, help="the frames for keep lost tracks")
     parser.add_argument("--match_thresh", type=float, default=0.7, help="matching threshold for tracking")
     parser.add_argument("--aspect_ratio_thresh", type=float, default=1.6, help="threshold for filtering out boxes of which aspect ratio are above the given value.")
     parser.add_argument('--min_box_area', type=float, default=4, help='filter out tiny boxes')
