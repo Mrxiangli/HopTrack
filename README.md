@@ -88,7 +88,7 @@ save the processed video sequence
 
 ## HopTrack Evaluation
 
-To replicate the results, you need to download the original dataset from [MOT16](https://motchallenge.net/data/MOT16/), [MOT17](https://motchallenge.net/data/MOT17/) and [MOT20](https://motchallenge.net/data/MOT20/). Since the original dataset is provided in the form of individual frames, using the following command and the repected framerate of the video sequence to assemble the individual images into frames.
+To replicate the results, you need to download the original dataset from [MOT16](https://motchallenge.net/data/MOT16/), [MOT17](https://motchallenge.net/data/MOT17/) and [MOT20](https://motchallenge.net/data/MOT20/). Since the original dataset is provided in the form of individual frames, using the following command and the repected framerate of the video sequence to assemble the individual images into a video.
 
 ```
 $ ffmpeg -r [framerate] -i path/to/image/img%06d.png -c:v libx264 -vf fps=[framerate] -pix_fmt yuv420p out.mp4
