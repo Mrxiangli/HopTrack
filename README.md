@@ -127,3 +127,5 @@ For GPU contention test, we provide a script that can approximately generate GPU
 python gpu_contention.py --GPU n
 ```
 where n is the contention in percentage. (Due to the memory reading speed issue, the contention generated here may saturate after 50%).
+
+A comprehensive raw data from our test can be downloaded [here](https://www.dropbox.com/s/lkpehbej6tq4d9l/Archive.zip?dl=0)
