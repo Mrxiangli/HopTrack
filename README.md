@@ -7,6 +7,11 @@ Multi-Object Tracking (MOT) is a challenging computer vision problem. State-of-t
 <img src="src_files/system_overview.png" width="400"/>
 
 ## Tracking performance
+
+### Demonstration of track suppression and unique identity tracking during occlusion
+<img src="src_files/occu.png" width="800"/>
+
+
 ### HopTrack result on MOT challenge test set on Jetson AGX
 | Dataset    |  MOTA | IDF1 | HOTA | MT | ML | FP | FN | IDsw | FPS |
 |------------|-------|------|------|-------|-------|------|------|------|------|
