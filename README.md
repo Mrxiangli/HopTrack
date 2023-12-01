@@ -78,7 +78,7 @@ Since HopTrack is detector independent, it can be adapted with any state-of-the-
 ```
 <tx, ty, bx, by, class_id, confidence>
 ```
-We reserved two detector sockets in our implementation, Yolox and Yolov5.
+We reserved three detector sockets in our implementation, Yolox and Yolov5, and Yolov7. We included the Yolov7 and Yolox implementation in this repo. You can also choose to download them from their official implementation as well.
 
 HopTrack has three different variations - HopDynamo, HopSwift, HopAccurate. To sepcify the variation to execute, the following command can be used:
 ```
@@ -116,6 +116,8 @@ python track.py --path path/to/the/video.mp4 --model yolox_s --ckpt path/to/the/
 ```
 
 The generated video_result.txt is mot compatible, can be directly submitted to the test server through the [MOT challenge](https://motchallenge.net/instructions/) website.
+
+Here, we oncluded an automated test script autotest_mot16.sh, which will run through all sequnce in a specificed input directory.(see the code for usage)
 
 ### Power, Energy and Memory test
 
