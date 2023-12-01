@@ -117,7 +117,7 @@ python track.py --path path/to/the/video.mp4 --model yolox_s --ckpt path/to/the/
 
 The generated video_result.txt is mot compatible, can be directly submitted to the test server through the [MOT challenge](https://motchallenge.net/instructions/) website.
 
-Here, we oncluded an automated test script autotest_mot16.sh, which will run through all sequnce in a specificed input directory.(see the code for usage)
+Here, we included an automated test script autotest_mot16.sh, which will run through all sequnce in a specificed input directory.(see the code for usage)
 
 ### Power, Energy and Memory test
 
