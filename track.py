@@ -5,7 +5,7 @@ import argparse
 import os,sys
 import time
 from loguru import logger
-from utils import EXP, Predictor, build_engine, dbscan_clustering, detection_rate_adjuster, trail_run
+from track_utils import EXP, Predictor, build_engine, dbscan_clustering, detection_rate_adjuster, trail_run
 import json
 import threading
 import tensorrt as trt
@@ -16,7 +16,7 @@ import multiprocessing
 from multiprocessing import Pool, Process
 
 # add current folder into path
-sys.path.insert(0, "/".join(os.getcwd().split('/')[:-1]))
+#sys.path.insert(0, "/".join(os.getcwd().split('/')[:-1]))
 
 import cv2
 import torch
@@ -81,9 +81,9 @@ def start_process(source, path, predictor, vis_folder, args):
     img_info["height"] = height
     img_info["width"] = width 
 
-    if args.upper:
+    if args.swift:
         sampling_strategy = 1           # upper
-    elif args.lower: 
+    elif args.accurate: 
         sampling_strategy = 2           # lower
     else:
         sampling_strategy = 0           # dynamic
@@ -96,10 +96,15 @@ def start_process(source, path, predictor, vis_folder, args):
             detection_rate = 4
         if "MOT16-13" in args.path.split('/')[-1] or "MOT16-14" in args.path.split('/')[-1]:
             detection_rate = 7
+        if "KITTI-13" in args.path.split('/')[-1] or "KITT-17" in args.path.split('/')[-1]:
+            detection_rate = 1
+        if "KITTI-13" in args.path.split('/')[-1] or "KITT-13" in args.path.split('/')[-1]:
+            detection_rate = 1
         
     else:
         detection_rate = 9
 
+    #detection_rate = 2
     total_post_fuse = 0
     total_post_update = 0
     det_frame_ct = 0
@@ -124,12 +129,14 @@ def start_process(source, path, predictor, vis_folder, args):
             if frame_id % detection_rate == 1:
                 light_multi_tracker.clear()
                 light_multi_tracker = cv2.MultiTracker_create()
+                start = time.time()
                 outputs, img_info = predictor.inference(frame)
+                #print(outputs)
 
                 if outputs[0] is not None:
                     online_targets = tracker.detect_track_fuse(outputs[0], [img_info['height'], img_info['width'], img_info["raw_img"]], exp.test_size)
 
-                    inter_process_start = time.time()
+                    #inter_process_start = time.time()
                     online_tlwhs = []
                     online_ids = []
                     online_scores = []
@@ -156,13 +163,13 @@ def start_process(source, path, predictor, vis_folder, args):
                                     light_tracker_id.append(tid)
 
                     # discard first three detection fuse time due to numba initialization
-                    end_process = (time.time()-inter_process_start)*1000
-                    det_frame_ct+=1
-                    if det_frame_ct > 3:
-                        total_post_fuse += end_process
+                    #end_process = (time.time()-inter_process_start)*1000
+                    #det_frame_ct+=1
+                    #if det_frame_ct > 3:
+                    #    total_post_fuse += end_process
                        # logger.info("average post fuse time: {:.4f}ms".format(total_post_fuse/(det_frame_ct-3)))
-                        if args.source != "webcam":
-                            tracker.worksheet.write(frame_id, 1, end_process)
+                    #    if args.source != "webcam":
+                    #        tracker.worksheet.write(frame_id, 1, end_process)
                     
                     object_pool.put(online_targets)
                     if rate_pool.qsize()!=0:
@@ -182,7 +189,8 @@ def start_process(source, path, predictor, vis_folder, args):
                             print(f"{frame_id},{t.track_id},{t.tlwh[0]},{t.tlwh[1]},{t.tlwh[2]},{t.tlwh[3]},{t.score},-1,-1,-1")
 
                    
-                   
+                    end=time.time()
+                    fps = round(1/(end-start),2)                   
                     online_im = plot_tracking(
                         image=img_info['raw_img'], tlwhs=online_tlwhs, obj_ids=online_ids, online_class_id=online_class_id, frame_id=frame_id + 1, fps=fps, scores=online_scores, class_names = COCO_CLASSES
                     )
@@ -194,7 +202,7 @@ def start_process(source, path, predictor, vis_folder, args):
                 # for mota purpose
                 if frame_id not in detection_result.keys():
                     detection_result[frame_id]={}
-                
+                start = time.time()
                 if len(predicted_bbox) != 0:
                     tk_start = time.time()
                     predict_bbox = []
@@ -262,8 +270,9 @@ def start_process(source, path, predictor, vis_folder, args):
                             online_class_id.append(t.class_id)
                             if t.class_id == 0:     # person only
                                 detection_result[frame_id][t.track_id]=(t.tlwh[0],t.tlwh[1],t.tlwh[2],t.tlwh[3])
-                        print(f"{frame_id},{t.track_id},{t.tlwh[0]},{t.tlwh[1]},{t.tlwh[2]},{t.tlwh[3]},{t.score},-1,-1,-1")        
-
+                            print(f"{frame_id},{t.track_id},{t.tlwh[0]},{t.tlwh[1]},{t.tlwh[2]},{t.tlwh[3]},{t.score},-1,-1,-1")        
+                    end = time.time()
+                    fps = round(1/(end-start),2)
                     online_im = plot_tracking(
                         image=img_info['raw_img'], tlwhs=online_tlwhs, obj_ids=online_ids, online_class_id=online_class_id, frame_id=frame_id + 1, fps=fps, scores=online_scores, class_names = COCO_CLASSES
                     )
@@ -273,8 +282,8 @@ def start_process(source, path, predictor, vis_folder, args):
             frame_id +=1
 
             if args.save_result:
-                #vid_writer.write(online_im)
-               # cv2.imwrite(os.getcwd()+"/imgs/"+str(frame_id-1)+".png", online_im)
+                vid_writer.write(online_im)
+                #cv2.imwrite(os.getcwd()+"/imgs/"+str(frame_id-1)+".png", online_im)
                 pass
             else:
                 cv2.namedWindow("yolox", cv2.WINDOW_NORMAL)
@@ -313,8 +322,8 @@ if __name__ == '__main__':
     parser.add_argument("--mot",dest="mot",default=False,action="store_true",help="run mot trained model.")
     parser.add_argument("--dis_traj",dest="dis_traj",default=False,action="store_true",help="Disable trajectory finding and dynamic matching")
     parser.add_argument("--dynamic",dest="dynamic",default=False,action="store_true",help="Enable content-aware dynamic sampling")
-    parser.add_argument("--upper",dest="upper",default=False,action="store_true",help="Enable upper bound sampling, fast but lower mota")
-    parser.add_argument("--lower",dest="lower",default=False,action="store_true",help="Enable lower bound sampling, slow but higher mota")
+    parser.add_argument("--swift",dest="swift",default=False,action="store_true",help="Enable upper bound sampling, fast but lower mota")
+    parser.add_argument("--accurate",dest="accurate",default=False,action="store_true",help="Enable lower bound sampling, slow but higher mota")
 
 
     # tracking arg
@@ -357,6 +366,10 @@ if __name__ == '__main__':
     if args.model == "yolov5":
         model_depth, model_width = None, None
         exp = EXP(model_depth, model_width, args)
+    
+    if args.model == "yolov7":
+        model_depth, model_width = None, None
+        exp = EXP(model_depth, model_width, args) 
     
     if args.model == "mobilenet":
         pass
