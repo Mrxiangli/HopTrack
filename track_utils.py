@@ -20,27 +20,13 @@ from yolox.models import YOLOX, YOLOPAFPN, YOLOXHead
 from yolox.tracker import matching
 
 import sys
-# for yolov5 detector support
-#yolov5_dir = "/".join(os.getcwd().split('/')[:-1])+"/yolov5"
+# for yolov7 detector support
 yolov7_dir = "/".join(os.getcwd().split('/')[:-1])
 sys.path.insert(0, yolov7_dir)
-#sys.path.insert(0, yolov5_dir)
 
-import yolov5
-from yolov5.models.common import DetectMultiBackend
-from yolov5.utils_yolov5.dataloaders import IMG_FORMATS, VID_FORMATS, LoadImages, LoadScreenshots, LoadStreams
-from yolov5.utils_yolov5.general import (LOGGER, Profile, check_file, check_img_size, check_imshow, check_requirements, colorstr, cv2, increment_path, non_max_suppression, print_args, scale_boxes, strip_optimizer, xyxy2xywh)
-from yolov5.utils_yolov5.plots import Annotator, colors, save_one_box
-from yolov5.utils_yolov5.torch_utils import select_device, smart_inference_mode
-from yolov5.utils_yolov5.augmentations import (Albumentations, augment_hsv, classify_albumentations, classify_transforms, copy_paste, letterbox, mixup, random_perspective)
-
-#import yolov7
-
-# from yolov7.models.common import MP
 from yolov7.models.experimental import attempt_load
-from yolov7.utils.general import check_img_size, scale_coords, xyxy2xywh
-# from yolov7.models.common import Conv, DWConv
-
+from yolov7.utils.general import check_img_size, scale_coords, xyxy2xywh, check_img_size, non_max_suppression, scale_boxes
+from yolov7.utils.datasets import letterbox
 
 class EXP:
     def __init__(self,depth,width, args):
@@ -324,7 +310,7 @@ def detection_rate_adjuster(cluster_dic, cluster_num, mot_test_file, sampling_st
                 detection_rate = 10
             else:
                 detection_rate = 11
-    #detection_rate = 2
+    detection_rate = 2
     return detection_rate
 
 # enable trail run when needed for GPU preheat!
