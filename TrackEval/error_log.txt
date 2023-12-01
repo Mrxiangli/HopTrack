@@ -1,0 +1,616 @@
+MotChallenge2DBox
+/home/dcsl/Documents/TrackEval/data/trackers/mot_challenge/MOT16-train/Ours
+Traceback (most recent call last):
+  File "/home/dcsl/Documents/TrackEval/trackeval/datasets/_base_dataset.py", line 168, in _load_simple_text_file
+    timestep = str(int(float(row[time_col])))
+ValueError: could not convert string to float: 'R'
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/home/dcsl/Documents/TrackEval/trackeval/datasets/_base_dataset.py", line 204, in _load_simple_text_file
+    raise TrackEvalException(exc_str)
+trackeval.utils.TrackEvalException: In file MOT16-02.txt the following line cannot be read correctly: 
+ R pConv.fus _r pvgg_block
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/home/dcsl/Documents/TrackEval/trackeval/eval.py", line 114, in evaluate
+    metric_names)
+  File "/home/dcsl/Documents/TrackEval/trackeval/_timing.py", line 17, in wrap
+    result = f(*args, **kw)
+  File "/home/dcsl/Documents/TrackEval/trackeval/eval.py", line 218, in eval_sequence
+    raw_data = dataset.get_raw_seq_data(tracker, seq)
+  File "/home/dcsl/Documents/TrackEval/trackeval/_timing.py", line 17, in wrap
+    result = f(*args, **kw)
+  File "/home/dcsl/Documents/TrackEval/trackeval/datasets/_base_dataset.py", line 93, in get_raw_seq_data
+    raw_tracker_data = self._load_raw_file(tracker, seq, is_gt=False)
+  File "/home/dcsl/Documents/TrackEval/trackeval/datasets/mot_challenge_2d_box.py", line 205, in _load_raw_file
+    read_data, ignore_data = self._load_simple_text_file(file, is_zipped=self.data_is_zipped, zip_file=zip_file)
+  File "/home/dcsl/Documents/TrackEval/trackeval/datasets/_base_dataset.py", line 211, in _load_simple_text_file
+    file))
+trackeval.utils.TrackEvalException: File MOT16-02.txt cannot be read because it is either not present or invalidly formatted
+
+
+
+
+
+MotChallenge2DBox
+/home/dcsl/Documents/TrackEval/data/trackers/mot_challenge/MOT16-train/Ours
+Traceback (most recent call last):
+  File "/home/dcsl/Documents/TrackEval/trackeval/datasets/_base_dataset.py", line 168, in _load_simple_text_file
+    timestep = str(int(float(row[time_col])))
+ValueError: could not convert string to float: 'R'
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/home/dcsl/Documents/TrackEval/trackeval/datasets/_base_dataset.py", line 204, in _load_simple_text_file
+    raise TrackEvalException(exc_str)
+trackeval.utils.TrackEvalException: In file MOT16-04.txt the following line cannot be read correctly: 
+ R pConv.fus _r pvgg_block
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/home/dcsl/Documents/TrackEval/trackeval/eval.py", line 114, in evaluate
+    metric_names)
+  File "/home/dcsl/Documents/TrackEval/trackeval/_timing.py", line 17, in wrap
+    result = f(*args, **kw)
+  File "/home/dcsl/Documents/TrackEval/trackeval/eval.py", line 218, in eval_sequence
+    raw_data = dataset.get_raw_seq_data(tracker, seq)
+  File "/home/dcsl/Documents/TrackEval/trackeval/_timing.py", line 17, in wrap
+    result = f(*args, **kw)
+  File "/home/dcsl/Documents/TrackEval/trackeval/datasets/_base_dataset.py", line 93, in get_raw_seq_data
+    raw_tracker_data = self._load_raw_file(tracker, seq, is_gt=False)
+  File "/home/dcsl/Documents/TrackEval/trackeval/datasets/mot_challenge_2d_box.py", line 205, in _load_raw_file
+    read_data, ignore_data = self._load_simple_text_file(file, is_zipped=self.data_is_zipped, zip_file=zip_file)
+  File "/home/dcsl/Documents/TrackEval/trackeval/datasets/_base_dataset.py", line 211, in _load_simple_text_file
+    file))
+trackeval.utils.TrackEvalException: File MOT16-04.txt cannot be read because it is either not present or invalidly formatted
+
+
+
+
+
+MotChallenge2DBox
+/home/dcsl/Documents/TrackEval/data/trackers/mot_challenge/MOT16-train/Ours
+Traceback (most recent call last):
+  File "/home/dcsl/Documents/TrackEval/trackeval/datasets/_base_dataset.py", line 168, in _load_simple_text_file
+    timestep = str(int(float(row[time_col])))
+ValueError: could not convert string to float: 'R'
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/home/dcsl/Documents/TrackEval/trackeval/datasets/_base_dataset.py", line 204, in _load_simple_text_file
+    raise TrackEvalException(exc_str)
+trackeval.utils.TrackEvalException: In file MOT16-05.txt the following line cannot be read correctly: 
+ R pConv.fus _r pvgg_block
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/home/dcsl/Documents/TrackEval/trackeval/eval.py", line 114, in evaluate
+    metric_names)
+  File "/home/dcsl/Documents/TrackEval/trackeval/_timing.py", line 17, in wrap
+    result = f(*args, **kw)
+  File "/home/dcsl/Documents/TrackEval/trackeval/eval.py", line 218, in eval_sequence
+    raw_data = dataset.get_raw_seq_data(tracker, seq)
+  File "/home/dcsl/Documents/TrackEval/trackeval/_timing.py", line 17, in wrap
+    result = f(*args, **kw)
+  File "/home/dcsl/Documents/TrackEval/trackeval/datasets/_base_dataset.py", line 93, in get_raw_seq_data
+    raw_tracker_data = self._load_raw_file(tracker, seq, is_gt=False)
+  File "/home/dcsl/Documents/TrackEval/trackeval/datasets/mot_challenge_2d_box.py", line 205, in _load_raw_file
+    read_data, ignore_data = self._load_simple_text_file(file, is_zipped=self.data_is_zipped, zip_file=zip_file)
+  File "/home/dcsl/Documents/TrackEval/trackeval/datasets/_base_dataset.py", line 211, in _load_simple_text_file
+    file))
+trackeval.utils.TrackEvalException: File MOT16-05.txt cannot be read because it is either not present or invalidly formatted
+
+
+
+
+
+MotChallenge2DBox
+/home/dcsl/Documents/TrackEval/data/trackers/mot_challenge/MOT16-train/Ours
+Traceback (most recent call last):
+  File "/home/dcsl/Documents/TrackEval/trackeval/datasets/_base_dataset.py", line 168, in _load_simple_text_file
+    timestep = str(int(float(row[time_col])))
+ValueError: could not convert string to float: 'R'
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/home/dcsl/Documents/TrackEval/trackeval/datasets/_base_dataset.py", line 204, in _load_simple_text_file
+    raise TrackEvalException(exc_str)
+trackeval.utils.TrackEvalException: In file MOT16-09.txt the following line cannot be read correctly: 
+ R pConv.fus _r pvgg_block
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/home/dcsl/Documents/TrackEval/trackeval/eval.py", line 114, in evaluate
+    metric_names)
+  File "/home/dcsl/Documents/TrackEval/trackeval/_timing.py", line 17, in wrap
+    result = f(*args, **kw)
+  File "/home/dcsl/Documents/TrackEval/trackeval/eval.py", line 218, in eval_sequence
+    raw_data = dataset.get_raw_seq_data(tracker, seq)
+  File "/home/dcsl/Documents/TrackEval/trackeval/_timing.py", line 17, in wrap
+    result = f(*args, **kw)
+  File "/home/dcsl/Documents/TrackEval/trackeval/datasets/_base_dataset.py", line 93, in get_raw_seq_data
+    raw_tracker_data = self._load_raw_file(tracker, seq, is_gt=False)
+  File "/home/dcsl/Documents/TrackEval/trackeval/datasets/mot_challenge_2d_box.py", line 205, in _load_raw_file
+    read_data, ignore_data = self._load_simple_text_file(file, is_zipped=self.data_is_zipped, zip_file=zip_file)
+  File "/home/dcsl/Documents/TrackEval/trackeval/datasets/_base_dataset.py", line 211, in _load_simple_text_file
+    file))
+trackeval.utils.TrackEvalException: File MOT16-09.txt cannot be read because it is either not present or invalidly formatted
+
+
+
+
+
+MotChallenge2DBox
+/home/dcsl/Documents/TrackEval/data/trackers/mot_challenge/MOT16-train/Ours
+Traceback (most recent call last):
+  File "/home/dcsl/Documents/TrackEval/trackeval/datasets/_base_dataset.py", line 168, in _load_simple_text_file
+    timestep = str(int(float(row[time_col])))
+ValueError: could not convert string to float: 'R'
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/home/dcsl/Documents/TrackEval/trackeval/datasets/_base_dataset.py", line 204, in _load_simple_text_file
+    raise TrackEvalException(exc_str)
+trackeval.utils.TrackEvalException: In file MOT16-10.txt the following line cannot be read correctly: 
+ R pConv.fus _r pvgg_block
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/home/dcsl/Documents/TrackEval/trackeval/eval.py", line 114, in evaluate
+    metric_names)
+  File "/home/dcsl/Documents/TrackEval/trackeval/_timing.py", line 17, in wrap
+    result = f(*args, **kw)
+  File "/home/dcsl/Documents/TrackEval/trackeval/eval.py", line 218, in eval_sequence
+    raw_data = dataset.get_raw_seq_data(tracker, seq)
+  File "/home/dcsl/Documents/TrackEval/trackeval/_timing.py", line 17, in wrap
+    result = f(*args, **kw)
+  File "/home/dcsl/Documents/TrackEval/trackeval/datasets/_base_dataset.py", line 93, in get_raw_seq_data
+    raw_tracker_data = self._load_raw_file(tracker, seq, is_gt=False)
+  File "/home/dcsl/Documents/TrackEval/trackeval/datasets/mot_challenge_2d_box.py", line 205, in _load_raw_file
+    read_data, ignore_data = self._load_simple_text_file(file, is_zipped=self.data_is_zipped, zip_file=zip_file)
+  File "/home/dcsl/Documents/TrackEval/trackeval/datasets/_base_dataset.py", line 211, in _load_simple_text_file
+    file))
+trackeval.utils.TrackEvalException: File MOT16-10.txt cannot be read because it is either not present or invalidly formatted
+
+
+
+
+
+MotChallenge2DBox
+/home/dcsl/Documents/TrackEval/data/trackers/mot_challenge/MOT16-train/Ours
+Traceback (most recent call last):
+  File "/home/dcsl/Documents/TrackEval/trackeval/datasets/_base_dataset.py", line 168, in _load_simple_text_file
+    timestep = str(int(float(row[time_col])))
+ValueError: could not convert string to float: 'R'
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/home/dcsl/Documents/TrackEval/trackeval/datasets/_base_dataset.py", line 204, in _load_simple_text_file
+    raise TrackEvalException(exc_str)
+trackeval.utils.TrackEvalException: In file MOT16-11.txt the following line cannot be read correctly: 
+ R pConv.fus _r pvgg_block
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/home/dcsl/Documents/TrackEval/trackeval/eval.py", line 114, in evaluate
+    metric_names)
+  File "/home/dcsl/Documents/TrackEval/trackeval/_timing.py", line 17, in wrap
+    result = f(*args, **kw)
+  File "/home/dcsl/Documents/TrackEval/trackeval/eval.py", line 218, in eval_sequence
+    raw_data = dataset.get_raw_seq_data(tracker, seq)
+  File "/home/dcsl/Documents/TrackEval/trackeval/_timing.py", line 17, in wrap
+    result = f(*args, **kw)
+  File "/home/dcsl/Documents/TrackEval/trackeval/datasets/_base_dataset.py", line 93, in get_raw_seq_data
+    raw_tracker_data = self._load_raw_file(tracker, seq, is_gt=False)
+  File "/home/dcsl/Documents/TrackEval/trackeval/datasets/mot_challenge_2d_box.py", line 205, in _load_raw_file
+    read_data, ignore_data = self._load_simple_text_file(file, is_zipped=self.data_is_zipped, zip_file=zip_file)
+  File "/home/dcsl/Documents/TrackEval/trackeval/datasets/_base_dataset.py", line 211, in _load_simple_text_file
+    file))
+trackeval.utils.TrackEvalException: File MOT16-11.txt cannot be read because it is either not present or invalidly formatted
+
+
+
+
+
+MotChallenge2DBox
+/home/dcsl/Documents/TrackEval/data/trackers/mot_challenge/MOT16-train/Ours
+Traceback (most recent call last):
+  File "/home/dcsl/Documents/TrackEval/trackeval/datasets/_base_dataset.py", line 168, in _load_simple_text_file
+    timestep = str(int(float(row[time_col])))
+ValueError: could not convert string to float: 'R'
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/home/dcsl/Documents/TrackEval/trackeval/datasets/_base_dataset.py", line 204, in _load_simple_text_file
+    raise TrackEvalException(exc_str)
+trackeval.utils.TrackEvalException: In file MOT16-13.txt the following line cannot be read correctly: 
+ R pConv.fus _r pvgg_block
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/home/dcsl/Documents/TrackEval/trackeval/eval.py", line 114, in evaluate
+    metric_names)
+  File "/home/dcsl/Documents/TrackEval/trackeval/_timing.py", line 17, in wrap
+    result = f(*args, **kw)
+  File "/home/dcsl/Documents/TrackEval/trackeval/eval.py", line 218, in eval_sequence
+    raw_data = dataset.get_raw_seq_data(tracker, seq)
+  File "/home/dcsl/Documents/TrackEval/trackeval/_timing.py", line 17, in wrap
+    result = f(*args, **kw)
+  File "/home/dcsl/Documents/TrackEval/trackeval/datasets/_base_dataset.py", line 93, in get_raw_seq_data
+    raw_tracker_data = self._load_raw_file(tracker, seq, is_gt=False)
+  File "/home/dcsl/Documents/TrackEval/trackeval/datasets/mot_challenge_2d_box.py", line 205, in _load_raw_file
+    read_data, ignore_data = self._load_simple_text_file(file, is_zipped=self.data_is_zipped, zip_file=zip_file)
+  File "/home/dcsl/Documents/TrackEval/trackeval/datasets/_base_dataset.py", line 211, in _load_simple_text_file
+    file))
+trackeval.utils.TrackEvalException: File MOT16-13.txt cannot be read because it is either not present or invalidly formatted
+
+
+
+
+
+MotChallenge2DBox
+/home/dcsl/Documents/TrackEval/data/trackers/mot_challenge/MOT16-train/Ours
+Traceback (most recent call last):
+  File "/home/dcsl/Documents/TrackEval/trackeval/datasets/_base_dataset.py", line 168, in _load_simple_text_file
+    timestep = str(int(float(row[time_col])))
+ValueError: could not convert string to float: 'R'
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/home/dcsl/Documents/TrackEval/trackeval/datasets/_base_dataset.py", line 204, in _load_simple_text_file
+    raise TrackEvalException(exc_str)
+trackeval.utils.TrackEvalException: In file MOT16-02.txt the following line cannot be read correctly: 
+ R pConv.fus _r pvgg_block
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/home/dcsl/Documents/TrackEval/trackeval/eval.py", line 114, in evaluate
+    metric_names)
+  File "/home/dcsl/Documents/TrackEval/trackeval/_timing.py", line 17, in wrap
+    result = f(*args, **kw)
+  File "/home/dcsl/Documents/TrackEval/trackeval/eval.py", line 218, in eval_sequence
+    raw_data = dataset.get_raw_seq_data(tracker, seq)
+  File "/home/dcsl/Documents/TrackEval/trackeval/_timing.py", line 17, in wrap
+    result = f(*args, **kw)
+  File "/home/dcsl/Documents/TrackEval/trackeval/datasets/_base_dataset.py", line 93, in get_raw_seq_data
+    raw_tracker_data = self._load_raw_file(tracker, seq, is_gt=False)
+  File "/home/dcsl/Documents/TrackEval/trackeval/datasets/mot_challenge_2d_box.py", line 205, in _load_raw_file
+    read_data, ignore_data = self._load_simple_text_file(file, is_zipped=self.data_is_zipped, zip_file=zip_file)
+  File "/home/dcsl/Documents/TrackEval/trackeval/datasets/_base_dataset.py", line 211, in _load_simple_text_file
+    file))
+trackeval.utils.TrackEvalException: File MOT16-02.txt cannot be read because it is either not present or invalidly formatted
+
+
+
+
+
+MotChallenge2DBox
+/home/dcsl/Documents/TrackEval/data/trackers/mot_challenge/MOT16-train/Ours
+Traceback (most recent call last):
+  File "/home/dcsl/Documents/TrackEval/trackeval/datasets/_base_dataset.py", line 168, in _load_simple_text_file
+    timestep = str(int(float(row[time_col])))
+ValueError: could not convert string to float: 'R'
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/home/dcsl/Documents/TrackEval/trackeval/datasets/_base_dataset.py", line 204, in _load_simple_text_file
+    raise TrackEvalException(exc_str)
+trackeval.utils.TrackEvalException: In file MOT16-02.txt the following line cannot be read correctly: 
+ R pConv.fus _r pvgg_block
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/home/dcsl/Documents/TrackEval/trackeval/eval.py", line 114, in evaluate
+    metric_names)
+  File "/home/dcsl/Documents/TrackEval/trackeval/_timing.py", line 17, in wrap
+    result = f(*args, **kw)
+  File "/home/dcsl/Documents/TrackEval/trackeval/eval.py", line 218, in eval_sequence
+    raw_data = dataset.get_raw_seq_data(tracker, seq)
+  File "/home/dcsl/Documents/TrackEval/trackeval/_timing.py", line 17, in wrap
+    result = f(*args, **kw)
+  File "/home/dcsl/Documents/TrackEval/trackeval/datasets/_base_dataset.py", line 93, in get_raw_seq_data
+    raw_tracker_data = self._load_raw_file(tracker, seq, is_gt=False)
+  File "/home/dcsl/Documents/TrackEval/trackeval/datasets/mot_challenge_2d_box.py", line 205, in _load_raw_file
+    read_data, ignore_data = self._load_simple_text_file(file, is_zipped=self.data_is_zipped, zip_file=zip_file)
+  File "/home/dcsl/Documents/TrackEval/trackeval/datasets/_base_dataset.py", line 211, in _load_simple_text_file
+    file))
+trackeval.utils.TrackEvalException: File MOT16-02.txt cannot be read because it is either not present or invalidly formatted
+
+
+
+
+
+MotChallenge2DBox
+/home/dcsl/Documents/TrackEval/data/trackers/mot_challenge/MOT16-train/Ours
+Traceback (most recent call last):
+  File "/home/dcsl/Documents/TrackEval/trackeval/datasets/_base_dataset.py", line 168, in _load_simple_text_file
+    timestep = str(int(float(row[time_col])))
+ValueError: could not convert string to float: 'R'
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/home/dcsl/Documents/TrackEval/trackeval/datasets/_base_dataset.py", line 204, in _load_simple_text_file
+    raise TrackEvalException(exc_str)
+trackeval.utils.TrackEvalException: In file MOT16-02.txt the following line cannot be read correctly: 
+ R pConv.fus _r pvgg_block
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/home/dcsl/Documents/TrackEval/trackeval/eval.py", line 114, in evaluate
+    metric_names)
+  File "/home/dcsl/Documents/TrackEval/trackeval/_timing.py", line 17, in wrap
+    result = f(*args, **kw)
+  File "/home/dcsl/Documents/TrackEval/trackeval/eval.py", line 218, in eval_sequence
+    raw_data = dataset.get_raw_seq_data(tracker, seq)
+  File "/home/dcsl/Documents/TrackEval/trackeval/_timing.py", line 17, in wrap
+    result = f(*args, **kw)
+  File "/home/dcsl/Documents/TrackEval/trackeval/datasets/_base_dataset.py", line 93, in get_raw_seq_data
+    raw_tracker_data = self._load_raw_file(tracker, seq, is_gt=False)
+  File "/home/dcsl/Documents/TrackEval/trackeval/datasets/mot_challenge_2d_box.py", line 205, in _load_raw_file
+    read_data, ignore_data = self._load_simple_text_file(file, is_zipped=self.data_is_zipped, zip_file=zip_file)
+  File "/home/dcsl/Documents/TrackEval/trackeval/datasets/_base_dataset.py", line 211, in _load_simple_text_file
+    file))
+trackeval.utils.TrackEvalException: File MOT16-02.txt cannot be read because it is either not present or invalidly formatted
+
+
+
+
+
+MotChallenge2DBox
+/home/dcsl/Documents/TrackEval/data/trackers/mot_challenge/MOT16-train/Ours
+TypeError: float() argument must be a string or a number, not 'list'
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/home/dcsl/Documents/TrackEval/trackeval/datasets/mot_challenge_2d_box.py", line 232, in _load_raw_file
+    time_data = np.asarray(read_data[time_key], dtype=np.float)
+  File "/home/dcsl/.local/lib/python3.6/site-packages/numpy/core/_asarray.py", line 83, in asarray
+    return array(a, dtype, copy=False, order=order)
+ValueError: setting an array element with a sequence.
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/home/dcsl/Documents/TrackEval/trackeval/eval.py", line 114, in evaluate
+    metric_names)
+  File "/home/dcsl/Documents/TrackEval/trackeval/_timing.py", line 17, in wrap
+    result = f(*args, **kw)
+  File "/home/dcsl/Documents/TrackEval/trackeval/eval.py", line 218, in eval_sequence
+    raw_data = dataset.get_raw_seq_data(tracker, seq)
+  File "/home/dcsl/Documents/TrackEval/trackeval/_timing.py", line 17, in wrap
+    result = f(*args, **kw)
+  File "/home/dcsl/Documents/TrackEval/trackeval/datasets/_base_dataset.py", line 93, in get_raw_seq_data
+    raw_tracker_data = self._load_raw_file(tracker, seq, is_gt=False)
+  File "/home/dcsl/Documents/TrackEval/trackeval/datasets/mot_challenge_2d_box.py", line 240, in _load_raw_file
+    tracker, seq))
+trackeval.utils.TrackEvalException: Cannot convert tracking data from tracker /home/dcsl/Documents/TrackEval/data/trackers/mot_challenge/MOT16-train/Ours, sequence MOT16-09 to float. Is data corrupted?
+
+
+
+
+
+MotChallenge2DBox
+/home/dcsl/Documents/TrackEval/data/trackers/mot_challenge/MOT16-train/Ours
+TypeError: float() argument must be a string or a number, not 'list'
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/home/dcsl/Documents/TrackEval/trackeval/datasets/mot_challenge_2d_box.py", line 232, in _load_raw_file
+    time_data = np.asarray(read_data[time_key], dtype=np.float)
+  File "/home/dcsl/.local/lib/python3.6/site-packages/numpy/core/_asarray.py", line 83, in asarray
+    return array(a, dtype, copy=False, order=order)
+ValueError: setting an array element with a sequence.
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/home/dcsl/Documents/TrackEval/trackeval/eval.py", line 114, in evaluate
+    metric_names)
+  File "/home/dcsl/Documents/TrackEval/trackeval/_timing.py", line 17, in wrap
+    result = f(*args, **kw)
+  File "/home/dcsl/Documents/TrackEval/trackeval/eval.py", line 218, in eval_sequence
+    raw_data = dataset.get_raw_seq_data(tracker, seq)
+  File "/home/dcsl/Documents/TrackEval/trackeval/_timing.py", line 17, in wrap
+    result = f(*args, **kw)
+  File "/home/dcsl/Documents/TrackEval/trackeval/datasets/_base_dataset.py", line 93, in get_raw_seq_data
+    raw_tracker_data = self._load_raw_file(tracker, seq, is_gt=False)
+  File "/home/dcsl/Documents/TrackEval/trackeval/datasets/mot_challenge_2d_box.py", line 240, in _load_raw_file
+    tracker, seq))
+trackeval.utils.TrackEvalException: Cannot convert tracking data from tracker /home/dcsl/Documents/TrackEval/data/trackers/mot_challenge/MOT16-train/Ours, sequence MOT16-10 to float. Is data corrupted?
+
+
+
+
+
+MotChallenge2DBox
+/home/dcsl/Documents/TrackEval/data/trackers/mot_challenge/MOT16-train/Ours
+TypeError: float() argument must be a string or a number, not 'list'
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/home/dcsl/Documents/TrackEval/trackeval/datasets/mot_challenge_2d_box.py", line 232, in _load_raw_file
+    time_data = np.asarray(read_data[time_key], dtype=np.float)
+  File "/home/dcsl/.local/lib/python3.6/site-packages/numpy/core/_asarray.py", line 83, in asarray
+    return array(a, dtype, copy=False, order=order)
+ValueError: setting an array element with a sequence.
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/home/dcsl/Documents/TrackEval/trackeval/eval.py", line 114, in evaluate
+    metric_names)
+  File "/home/dcsl/Documents/TrackEval/trackeval/_timing.py", line 17, in wrap
+    result = f(*args, **kw)
+  File "/home/dcsl/Documents/TrackEval/trackeval/eval.py", line 218, in eval_sequence
+    raw_data = dataset.get_raw_seq_data(tracker, seq)
+  File "/home/dcsl/Documents/TrackEval/trackeval/_timing.py", line 17, in wrap
+    result = f(*args, **kw)
+  File "/home/dcsl/Documents/TrackEval/trackeval/datasets/_base_dataset.py", line 93, in get_raw_seq_data
+    raw_tracker_data = self._load_raw_file(tracker, seq, is_gt=False)
+  File "/home/dcsl/Documents/TrackEval/trackeval/datasets/mot_challenge_2d_box.py", line 240, in _load_raw_file
+    tracker, seq))
+trackeval.utils.TrackEvalException: Cannot convert tracking data from tracker /home/dcsl/Documents/TrackEval/data/trackers/mot_challenge/MOT16-train/Ours, sequence MOT16-11 to float. Is data corrupted?
+
+
+
+
+
+MotChallenge2DBox
+/home/dcsl/Documents/TrackEval/data/trackers/mot_challenge/MOT16-train/Ours
+TypeError: float() argument must be a string or a number, not 'list'
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/home/dcsl/Documents/TrackEval/trackeval/datasets/mot_challenge_2d_box.py", line 232, in _load_raw_file
+    time_data = np.asarray(read_data[time_key], dtype=np.float)
+  File "/home/dcsl/.local/lib/python3.6/site-packages/numpy/core/_asarray.py", line 83, in asarray
+    return array(a, dtype, copy=False, order=order)
+ValueError: setting an array element with a sequence.
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/home/dcsl/Documents/TrackEval/trackeval/eval.py", line 114, in evaluate
+    metric_names)
+  File "/home/dcsl/Documents/TrackEval/trackeval/_timing.py", line 17, in wrap
+    result = f(*args, **kw)
+  File "/home/dcsl/Documents/TrackEval/trackeval/eval.py", line 218, in eval_sequence
+    raw_data = dataset.get_raw_seq_data(tracker, seq)
+  File "/home/dcsl/Documents/TrackEval/trackeval/_timing.py", line 17, in wrap
+    result = f(*args, **kw)
+  File "/home/dcsl/Documents/TrackEval/trackeval/datasets/_base_dataset.py", line 93, in get_raw_seq_data
+    raw_tracker_data = self._load_raw_file(tracker, seq, is_gt=False)
+  File "/home/dcsl/Documents/TrackEval/trackeval/datasets/mot_challenge_2d_box.py", line 240, in _load_raw_file
+    tracker, seq))
+trackeval.utils.TrackEvalException: Cannot convert tracking data from tracker /home/dcsl/Documents/TrackEval/data/trackers/mot_challenge/MOT16-train/Ours, sequence MOT16-13 to float. Is data corrupted?
+
+
+
+
+
+MotChallenge2DBox
+/home/dcsl/Documents/TrackEval/data/trackers/mot_challenge/MOT16-train/Ours
+TypeError: float() argument must be a string or a number, not 'list'
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/home/dcsl/Documents/TrackEval/trackeval/datasets/mot_challenge_2d_box.py", line 232, in _load_raw_file
+    time_data = np.asarray(read_data[time_key], dtype=np.float)
+  File "/home/dcsl/.local/lib/python3.6/site-packages/numpy/core/_asarray.py", line 83, in asarray
+    return array(a, dtype, copy=False, order=order)
+ValueError: setting an array element with a sequence.
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/home/dcsl/Documents/TrackEval/trackeval/eval.py", line 114, in evaluate
+    metric_names)
+  File "/home/dcsl/Documents/TrackEval/trackeval/_timing.py", line 17, in wrap
+    result = f(*args, **kw)
+  File "/home/dcsl/Documents/TrackEval/trackeval/eval.py", line 218, in eval_sequence
+    raw_data = dataset.get_raw_seq_data(tracker, seq)
+  File "/home/dcsl/Documents/TrackEval/trackeval/_timing.py", line 17, in wrap
+    result = f(*args, **kw)
+  File "/home/dcsl/Documents/TrackEval/trackeval/datasets/_base_dataset.py", line 93, in get_raw_seq_data
+    raw_tracker_data = self._load_raw_file(tracker, seq, is_gt=False)
+  File "/home/dcsl/Documents/TrackEval/trackeval/datasets/mot_challenge_2d_box.py", line 240, in _load_raw_file
+    tracker, seq))
+trackeval.utils.TrackEvalException: Cannot convert tracking data from tracker /home/dcsl/Documents/TrackEval/data/trackers/mot_challenge/MOT16-train/Ours, sequence MOT16-13 to float. Is data corrupted?
+
+
+
+
+
+MotChallenge2DBox
+/home/dcsl/Documents/TrackEval/data/trackers/mot_challenge/MOT16-train/Ours
+Traceback (most recent call last):
+  File "/home/dcsl/Documents/TrackEval/trackeval/eval.py", line 181, in evaluate
+    output_fol)
+  File "/home/dcsl/Documents/TrackEval/trackeval/metrics/hota.py", line 201, in plot_single_tracker_results
+    plt.savefig(out_file)
+  File "/home/dcsl/.local/lib/python3.6/site-packages/matplotlib/pyplot.py", line 859, in savefig
+    res = fig.savefig(*args, **kwargs)
+  File "/home/dcsl/.local/lib/python3.6/site-packages/matplotlib/figure.py", line 2311, in savefig
+    self.canvas.print_figure(fname, **kwargs)
+  File "/home/dcsl/.local/lib/python3.6/MotChallenge2DBox
+/home/dcsl/Documents/TrackEval/data/trackers/mot_challenge/MOT16-train/Ours
+Traceback (most recent call last):
+  File "/home/dcsl/Documents/TrackEval/trackeval/eval.py", line 114, in evaluate
+    metric_names)
+  File "/home/dcsl/Documents/TrackEval/trackeval/_timing.py", line 17, in wrap
+    result = f(*args, **kw)
+  File "/home/dcsl/Documents/TrackEval/trackeval/eval.py", line 218, in eval_sequence
+    raw_data = dataset.get_raw_seq_data(tracker, seq)
+  File "/home/dcsl/Documents/TrackEval/trackeval/_timing.py", line 17, in wrap
+    result = f(*args, **kw)
+  File "/home/dcsl/Documents/TrackEval/trackeval/datasets/_base_dataset.py", line 93, in get_raw_seq_data
+    raw_tracker_data = self._load_raw_file(tracker, seq, is_gt=False)
+  File "/home/dcsl/Documents/TrackEval/trackeval/datasets/mot_challenge_2d_box.py", line 266, in _load_raw_file
+    raw_data['tracker_confidences'][t] = np.atleast_1d(time_data[:, 6])
+IndexError: index 6 is out of bounds for axis 1 with size 4
+
+
+
+
+
+MotChallenge2DBox
+/home/dcsl/Documents/TrackEval/data/trackers/mot_challenge/MOT16-train/Ours
+TypeError: float() argument must be a string or a number, not 'list'
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/home/dcsl/Documents/TrackEval/trackeval/datasets/mot_challenge_2d_box.py", line 232, in _load_raw_file
+    time_data = np.asarray(read_data[time_key], dtype=np.float)
+  File "/home/dcsl/.local/lib/python3.6/site-packages/numpy/core/_asarray.py", line 83, in asarray
+    return array(a, dtype, copy=False, order=order)
+ValueError: setting an array element with a sequence.
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/home/dcsl/Documents/TrackEval/trackeval/eval.py", line 114, in evaluate
+    metric_names)
+  File "/home/dcsl/Documents/TrackEval/trackeval/_timing.py", line 17, in wrap
+    result = f(*args, **kw)
+  File "/home/dcsl/Documents/TrackEval/trackeval/eval.py", line 218, in eval_sequence
+    raw_data = dataset.get_raw_seq_data(tracker, seq)
+  File "/home/dcsl/Documents/TrackEval/trackeval/_timing.py", line 17, in wrap
+    result = f(*args, **kw)
+  File "/home/dcsl/Documents/TrackEval/trackeval/datasets/_base_dataset.py", line 93, in get_raw_seq_data
+    raw_tracker_data = self._load_raw_file(tracker, seq, is_gt=False)
+  File "/home/dcsl/Documents/TrackEval/trackeval/datasets/mot_challenge_2d_box.py", line 240, in _load_raw_file
+    tracker, seq))
+trackeval.utils.TrackEvalException: Cannot convert tracking data from tracker /home/dcsl/Documents/TrackEval/data/trackers/mot_challenge/MOT16-train/Ours, sequence MOT16-13 to float. Is data corrupted?
+
+
+
+
+
