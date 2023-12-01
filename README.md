@@ -7,13 +7,24 @@ followed by an association algorithm to link detection across frames and predict
 <img src="src_files/system_overview.png" width="400"/>
 
 ## Tracking performance
-### HopTrack result on MOT challenge test set
-| Dataset    |  MOTA | IDF1 | HOTA | MT | ML | FP | FN | IDsw | FPS* |
+### HopTrack result on MOT challenge test set on Jetson AGX
+| Dataset    |  MOTA | IDF1 | HOTA | MT | ML | FP | FN | IDsw | FPS |
 |------------|-------|------|------|-------|-------|------|------|------|------|
 |MOT16       | 62.91 | 60.83 | 50.35 | 31.9% | 13.4% | 19063 | 46283 | 2278 | 30.61 |
 |MOT17       | 63.18 | 60.38 | 50.08 | 30.4% | 14.1% | 49848 | 149985 | 6765 | 30.61 |
 |MOT20       | 45.6 | 45.2 | 35.4 | 12.8% | 21.6%  | 40419 | 237887 | 2924 | 13.94 |
-* All FPS reported are measured on Nvidia Jetson AGX Xavier 
+
+### Detailed test result on MOT-16 testdata
+| Dataset    |  MOTA | IDF1 | HOTA | FP | FN | IDsw | FPS |
+|------------|-------|------|------|-------|-------|------|------|------|------|
+|MOT16-01       |  54.35 | 60.42 | 48.26 | 516   | 2376  | 27 | 30.61 |
+|MOT16-03       |  81.15 | 72.85 | 59.45 | 4163  | 15356 | 186 | 30.61 |
+|MOT16-06       | 42.5 | 44.39 | 36.08 | 2142  | 3934  | 558 | 30.61 |
+|MOT16-07       |37.99 | 29.40 | 28.91 | 3331  | 6331  | 460 | 30.61 |
+|MOT16-08       | 38.64 | 47.73 | 40.51 | 3396  | 6668  | 205 | 30.61 |
+|MOT16-12       | 27.37 | 37.18 | 31.25 | 2564  | 3294  | 167 | 30.61 |
+|MOT16-14       | 35.35 | 50.63 | 36.42 | 2951  | 8324  | 675 | 30.61 |
+
 
 ### State-of-the-arts trackers' performance when process on Nvidia Jetson AGX Xavier (MOT16/17)
 | Scheme     |  MOTA | IDF1 | HOTA | MT | ML | FP | FN | IDsw | FPS* |
