@@ -176,6 +176,7 @@ class HOPTracker(object):
         start_time = time.time()
         # output result are the most recent detection result from DNN
         output_results = output_results.cpu().numpy()
+        #print(output_results)
         scores = output_results[:, 4]
         bboxes = output_results[:, :4]
         cls_name = output_results[:,5]
@@ -415,7 +416,12 @@ class HOPTracker(object):
                         image_partition_list_b = quantization(each_track.last_frame,quant_list_b,7,3)
                         WASS=my_wass(image_partition_list_a, image_partition_list_b, 7,3)
 
-                        if sum(WASS[:,1]<=0.20)>=4:
+                        # img_path = "/home/dcsl/Documents/Video_Colab/imgs/"+self.args.path.split('/')[-1].split('.')[0]+"_frame"+str(self.frame_id)+"_track"+str(each_track.track_id)+".png"
+                        # cv2.imwrite(img_path, det_roi)
+                        # img_path = "/home/dcsl/Documents/Video_Colab/imgs/"+self.args.path.split('/')[-1].split('.')[0]+"_frame"+str(self.frame_id)+"_track"+str(each_track.track_id)+"_prev.png"
+                        # cv2.imwrite(img_path, each_track.last_frame)
+
+                        if sum(WASS[:,1]<=0.2)>=4:# default 0.2, 4
                             # if len(tmp_rank) >= 3:
                             #     plot_potential_match(self.frame_id, frame, was_unmatched_det, each_track, tmp_rank)
                             tmp_id = potential_match.track_id
@@ -565,9 +571,9 @@ class HOPTracker(object):
                 image_partition_list_b = quantization_color_vector(track.last_frame,quant_list_b,6,3)
                 cost=color_vector_cost_calculation(image_partition_list_a, image_partition_list_b, 6,3)
 
-                color_matches, color_u_track, color_u_detection = matching.linear_assignment(cost, thresh=0.0001)
+                color_matches, color_u_track, color_u_detection = matching.linear_assignment(cost, thresh=0.001)  #default 0.00001
 
-                if color_matches.shape[0] >= 9:
+                if color_matches.shape[0] >= 7:         # default 9
                     if track.state == TrackState.Tracked:
                         track.update(det, self.frame_id)
                         activate_tracks.append(track)
