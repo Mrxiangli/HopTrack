@@ -16,7 +16,7 @@ followed by an association algorithm to link detection across frames and predict
 
 ### Detailed test result on MOT-16 testdata
 | Dataset    |  MOTA | IDF1 | HOTA | FP | FN | IDsw | FPS |
-|------------|-------|------|------|-------|-------|------|------|------|------|
+|------------|-------|------|------|------|------|------|------|
 |MOT16-01       |  54.35 | 60.42 | 48.26 | 516   | 2376  | 27 | 30.61 |
 |MOT16-03       |  81.15 | 72.85 | 59.45 | 4163  | 15356 | 186 | 30.61 |
 |MOT16-06       | 42.5 | 44.39 | 36.08 | 2142  | 3934  | 558 | 30.61 |
