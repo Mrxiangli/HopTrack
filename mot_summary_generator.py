@@ -2,25 +2,30 @@ import pandas as pd
 import xlsxwriter
 
 
-# mot_files = [
-#     'MOT16-02-evaluation.csv',
-#     'MOT16-04-evaluation.csv',
-#     'MOT16-05-evaluation.csv',
-#     'MOT16-09-evaluation.csv',
-#     'MOT16-10-evaluation.csv',
-#     'MOT16-11-evaluation.csv',
-#     'MOT16-13-evaluation.csv',
-# ]
-
 mot_files = [
-    'MOT20-01-evaluation.csv',
-    'MOT20-02-evaluation.csv',
-    'MOT20-03-evaluation.csv',
-    'MOT20-05-evaluation.csv',
+    'MOT16-02-evaluation.csv',
+    'MOT16-04-evaluation.csv',
+    'MOT16-05-evaluation.csv',
+    'MOT16-09-evaluation.csv',
+    'MOT16-10-evaluation.csv',
+    'MOT16-11-evaluation.csv',
+    'MOT16-13-evaluation.csv',
 ]
 
+# mot_files = [
+#     'MOT20-01-evaluation.csv',
+#     'MOT20-02-evaluation.csv',
+#     'MOT20-03-evaluation.csv',
+#     'MOT20-05-evaluation.csv',
+# ]
 
-workbook = xlsxwriter.Workbook("MOT20_mota.xlsx")
+# mot_files = [
+#     'KITTI-13-evaluation.csv',
+#     'KITTI-17-evaluation.csv',
+# ]
+
+
+workbook = xlsxwriter.Workbook("MOT16_mota.xlsx")
 worksheet = workbook.add_worksheet()
 worksheet.write(0, 0, "sequence")
 worksheet.write(0, 1, "FP")
