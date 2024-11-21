@@ -147,3 +147,17 @@ python gpu_contention.py --GPU n
 where n is the contention in percentage. (Due to the memory reading speed issue, the contention generated here may saturate after 50%).
 
 A comprehensive raw data from our test can be downloaded [here](https://www.dropbox.com/s/lkpehbej6tq4d9l/Archive.zip?dl=0)
+
+Please cite our work if you find it helpful 
+
+```
+@misc{li2024hoptrackrealtimemultiobjecttracking,
+      title={HopTrack: A Real-time Multi-Object Tracking System for Embedded Devices}, 
+      author={Xiang Li and Cheng Chen and Yuan-yao Lou and Mustafa Abdallah and Kwang Taik Kim and Saurabh Bagchi},
+      year={2024},
+      eprint={2411.00608},
+      archivePrefix={arXiv},
+      primaryClass={cs.CV},
+      url={https://arxiv.org/abs/2411.00608}, 
+}
+```
