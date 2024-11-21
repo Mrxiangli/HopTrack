@@ -1,5 +1,7 @@
 # HopTrack - A Real-time Multi-Object Tracking Framework for Embedded System
 
+[paper](https://arxiv.org/abs/2411.00608)
+
 ## Abstract
 Multi-Object Tracking (MOT) is a challenging computer vision problem. State-of-the-art MOT trackers proposed for high-end GPUs suffer from low processing rates when directly executed on embedded devices. Existing literature has attempted to run MOT on embedded devices by fusing the detector model with the feature embedding model to reduce inference latency or by combining different trackers to improve tracking accuracy. However, the results are not satisfactory as they achieve high processing rates by sacrificing tracking accuracy or vice versa. In this paper, we designed a real-time multi-object tracking system, HopTrack, which specifically targets embedded devices. We propose a novel discretized static and dynamic matching approach to associate objects across several frames, combined with an innovative content-aware dynamic sampling technique to achieve better tracking accuracy. Compared with the best high-end GPU modified baseline Byte(Embed) [ECCV, 2022] and the best existing baseline on embedded devices MobileNet-JDE [Multimed. Tools. Appl,
 2022], HopTrack can produce a processing speed of up to 39.29 fps on NVIDIA AGX Xavier with a multi-object tracking accuracy (MOTA) of 63.12%, which is 2.15% higher than Byte(Embed), and 4.82% higher than MobileNet-JDE. HopTrack is also detector agnostic allowing the flexibility of plug-and-play.
